@@ -52,4 +52,35 @@ describe("runPipeline (end to end, fake adapter)", () => {
     expect(row.amountJD).toBe("36147.600");        // 2700 × 13.388
     expect(out.rollup.grandTotalFils).toBe(36_147_600);
   });
+
+  it("degrades a single bad line to NO_MATCH instead of aborting the whole run", async () => {
+    // One line's AI calls throw (simulating an AISchemaError after retries exhausted);
+    // the other line's calls succeed. The bad line must not abort pricing for the good one.
+    const boq2 = "tests/fixtures/run-boq-partial-fail.xlsx";
+    const rows = [
+      ["الرقم", "وصف البند", "الوحدة", "الكمية"],
+      ["1/1", "بند سيء يفشل الذكاء الاصطناعي", "م2", "10"],
+      ["5/4", "بلاط سيراميك أرضيات", "م2", "2700"],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "BOQ");
+    writeFileSync(boq2, XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+
+    const adapter = makeAdapter(async (req) => {
+      if (req.prompt.includes("بند سيء")) throw new Error("malformed AI response (simulated AISchemaError)");
+      if (req.prompt.includes("نماذج التسعير المتاحة")) return `{"costModelId":"${tradeSlug}.ceramic_floor","confidence":0.9}`;
+      return '{"material":"ceramic","dimensions":"60x60","category":"floor"}';
+    });
+
+    const out = await runPipeline({ file: boq2, profileSlug, adapter });
+
+    const badRow = out.rows.find((r) => r.itemCode === "1/1")!;
+    expect(badRow.rateJD).toBeNull();
+    expect(badRow.flags).toContain("NO_MATCH");
+
+    const goodRow = out.rows.find((r) => r.itemCode === "5/4")!;
+    expect(goodRow.rateJD).toBe("13.388");
+    expect(goodRow.amountJD).toBe("36147.600");
+  });
 });
