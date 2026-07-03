@@ -100,4 +100,25 @@ describe("priceQuote", () => {
     });
     expect(projectFlags.map((f) => f.code)).toContain("RATIO_WARNING"); // 100% > 30%
   });
+
+  it("flags an unknown unit through the orchestrator (UNIT_UNKNOWN, unpriced)", () => {
+    const { lines } = priceQuote({
+      items: [{ id: "i1", sectionRef: "5", itemType: "unit_rate", unitCanonical: null, quantityThousandths: 1_000, match }],
+      skills, snapshot,
+    });
+    expect(lines[0].rateFils).toBeNull();
+    expect(lines[0].flags.map((f) => f.code)).toContain("UNIT_UNKNOWN");
+  });
+
+  it("flags an out-of-band rate through the orchestrator (OUT_OF_BAND, still priced)", () => {
+    // Push the tile price far above normal so the computed rate exceeds the
+    // model band's maxRateFils (18000) via a per-project price override.
+    const { lines } = priceQuote({
+      items: [{ id: "i1", sectionRef: "5", itemType: "unit_rate", unitCanonical: "m2", quantityThousandths: 1_000, match }],
+      skills, snapshot,
+      overrides: { priceBook: { ceramic_tile_m2: 40_000 } },
+    });
+    expect(lines[0].rateFils).not.toBeNull(); // out-of-band is a warning, still priced
+    expect(lines[0].flags.map((f) => f.code)).toContain("OUT_OF_BAND");
+  });
 });
