@@ -4,3 +4,6 @@ node_modules/
 !.env.example
 *.log
 .DS_Store
+
+# Large binary reference material (example tender BOQs/drawings) — kept local, read by the pipeline, not versioned
+reference-docs/
