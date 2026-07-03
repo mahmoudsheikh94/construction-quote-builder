@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "pipeline": "tsx scripts/pipeline.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",
