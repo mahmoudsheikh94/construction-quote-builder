@@ -20,7 +20,7 @@ export function CorrectionDialog({
     <div
       role="dialog"
       aria-modal="true"
-      className="flex items-start justify-center bg-black/40 rounded-xl p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
     >
       <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6 w-full max-w-md space-y-4">
         <div>
