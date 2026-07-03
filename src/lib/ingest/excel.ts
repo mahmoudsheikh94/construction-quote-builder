@@ -49,51 +49,88 @@ function findHeaderRow(rows: string[][], scan = 20): number {
   return bestScore >= 2 ? best : 0; // fall back to row 0 if nothing clearly matches
 }
 
-export function ingestExcel(path: string, opts?: { sheet?: string }): ExtractionResult {
-  const wb = XLSX.readFile(path);
-  const sheetName = opts?.sheet ?? wb.SheetNames[0];
-  const ws = wb.Sheets[sheetName];
+// Extract line items from ONE sheet. sortOffset keeps sortOrder continuous when
+// concatenating multiple sheets; sheetTag prefixes sectionRef so sections from
+// different sheets don't collide in the rollup.
+function ingestSheet(
+  ws: XLSX.WorkSheet, sortOffset: number, sheetTag: string,
+): { lines: RawLine[]; warnings: string[] } {
   const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, blankrows: false, raw: false });
-  const warnings: string[] = [];
-  if (rows.length < 2) return { lines: [], warnings: ["الورقة فارغة أو لا تحتوي بيانات"] };
+  if (rows.length < 2) return { lines: [], warnings: [] };
 
   const headerRow = findHeaderRow(rows);
   const headerNorm = (rows[headerRow] ?? []).map(norm);
 
-  // Resolve price columns first so qty/desc matching can avoid them.
   const priceCols: number[] = [];
   headerNorm.forEach((c, i) => { if (PRICE_HEADER.some((p) => c.includes(p.toLowerCase()))) priceCols.push(i); });
 
   const cCode = matchCol(headerNorm, COL.code);
   const cUnit = matchCol(headerNorm, COL.unit, priceCols);
   const cQty = matchCol(headerNorm, COL.qty, priceCols);
-  // Description must not be the code/unit/qty/price column.
   const cDesc = matchCol(headerNorm, COL.desc, [cCode, cUnit, cQty, ...priceCols].filter((i) => i >= 0));
 
-  if (cDesc === -1) warnings.push("تعذّر تحديد عمود الوصف — سيُستخدم العمود التالي للرقم");
-  if (cQty === -1) warnings.push("تعذّر تحديد عمود الكمية");
-
-  // Fallback description column: the first non-code column at/after the header, else 1.
+  const warnings: string[] = [];
   const descCol = cDesc !== -1 ? cDesc : (cCode === 0 ? 1 : 0);
-
   const lines: RawLine[] = [];
+
   for (let r = headerRow + 1; r < rows.length; r++) {
     const row = rows[r] ?? [];
     const desc = String(row[descCol] ?? "").trim();
-    if (!desc) continue; // skip blank / section-separator rows
-    // Skip obvious carried-forward / summary rows.
+    if (!desc) continue;
     if (/^(ينقل|منقول|المجموع|الخلاصة|collection|summary|total carried|carried to)/i.test(desc)) continue;
     const code = cCode !== -1 ? String(row[cCode] ?? "").trim() || undefined : undefined;
     lines.push({
-      sortOrder: lines.length,
+      sortOrder: sortOffset + lines.length,
       itemCode: code,
-      sectionRef: sectionOf(code ?? ""),
+      sectionRef: `${sheetTag}${sectionOf(code ?? "")}`,
       descriptionOriginal: desc,
       unitRaw: cUnit !== -1 ? String(row[cUnit] ?? "").trim() || undefined : undefined,
       quantityRaw: cQty !== -1 ? String(row[cQty] ?? "").trim() || undefined : undefined,
     });
   }
+
+  // Only warn about a missing column on a sheet that actually produced items —
+  // otherwise every summary sheet floods the warnings.
+  if (lines.length > 0) {
+    if (cDesc === -1) warnings.push(`تعذّر تحديد عمود الوصف في الورقة "${sheetTag || "؟"}"`);
+    if (cQty === -1) warnings.push(`تعذّر تحديد عمود الكمية في الورقة "${sheetTag || "؟"}"`);
+  }
   return { lines, warnings };
+}
+
+// Ingest a BOQ workbook. With opts.sheet, reads ONLY that sheet. Otherwise reads
+// EVERY sheet that yields line items (real BOQs split bills/divisions across
+// tabs, and the data sheet is not always sheet 0), concatenating them with
+// continuous sortOrder. Sheets that yield nothing (summary/blank) are noted.
+export function ingestExcel(path: string, opts?: { sheet?: string }): ExtractionResult {
+  const wb = XLSX.readFile(path);
+  const targetSheets = opts?.sheet ? [opts.sheet] : wb.SheetNames;
+
+  const allLines: RawLine[] = [];
+  const warnings: string[] = [];
+  const multi = targetSheets.length > 1;
+  let dataSheets = 0;
+  const skipped: string[] = [];
+
+  for (const sn of targetSheets) {
+    const ws = wb.Sheets[sn];
+    if (!ws) { warnings.push(`الورقة "${sn}" غير موجودة`); continue; }
+    // Prefix sectionRef with the sheet name only when spanning multiple sheets,
+    // so a single-sheet workbook keeps its clean section numbers.
+    const sheetTag = multi ? `${sn}::` : "";
+    const { lines, warnings: w } = ingestSheet(ws, allLines.length, sheetTag);
+    if (lines.length > 0) { dataSheets++; allLines.push(...lines); warnings.push(...w); }
+    else skipped.push(sn);
+  }
+
+  if (allLines.length === 0) {
+    return { lines: [], warnings: [...warnings, "لم يتم العثور على بنود في أي ورقة"] };
+  }
+  if (multi) {
+    warnings.push(`تمت قراءة ${dataSheets} ورقة بيانات من أصل ${targetSheets.length}` +
+      (skipped.length ? ` (تم تخطي: ${skipped.join("، ")})` : ""));
+  }
+  return { lines: allLines, warnings };
 }
 
 // Section = the part of the item code before the first "/" or "." (e.g. "2/1" -> "2",
