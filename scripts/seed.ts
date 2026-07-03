@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { claudeCliAdapter } from "@/lib/ai/claude-cli";
-import { draftTradeSkill, persistReviewedSkill } from "@/lib/seed/seed-from-priced";
+import { draftTradeSkill, persistReviewedSkill, DRAFT_SCHEMA } from "@/lib/seed/seed-from-priced";
 
 // Two modes:
 //   draft:   npx tsx scripts/seed.ts draft <trade> <slug> <nameAr> <pricedDoc>  → writes seed-draft-<slug>.json for review
@@ -19,7 +19,14 @@ async function main() {
     const file = `seed-draft-${slug}.json`;
     if (!existsSync(file)) throw new Error(`لا توجد مسودة ${file} — شغّل draft أولاً`);
     const d = JSON.parse(readFileSync(file, "utf8"));
-    await persistReviewedSkill(slug, nameAr, d.skill, d.priceBook);
+    // A human may have hand-edited the draft (e.g. introduced a float priceFils or a
+    // wrong unit). Re-validate before persisting — a malformed skill here would
+    // silently mis-price every quote using this trade.
+    const parsed = DRAFT_SCHEMA.safeParse({ skill: d.skill, priceBook: d.priceBook });
+    if (!parsed.success) {
+      throw new Error(`مسودة ${file} غير صالحة بعد التعديل اليدوي: ${parsed.error.message}`);
+    }
+    await persistReviewedSkill(slug, nameAr, parsed.data.skill, parsed.data.priceBook);
     console.log(`✅ فُعّلت مهارة ${slug} مع دفتر الأسعار.`);
   } else {
     console.log("الاستخدام: seed.ts draft <trade> <slug> <nameAr> <doc>  |  seed.ts persist <slug> <nameAr>");
