@@ -1,7 +1,7 @@
 import { serviceClient } from "./client";
-import type { CanonicalUnit } from "@/lib/domain/types";
+import type { CanonicalUnit, ItemType } from "@/lib/domain/types";
 
-export type ItemType = "unit_rate" | "provisional_sum" | "dayworks" | "lump_sum" | "percentage";
+export type { ItemType };
 
 export interface NewLineItem {
   sortOrder: number;

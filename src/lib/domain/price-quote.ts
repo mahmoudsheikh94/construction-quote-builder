@@ -1,12 +1,12 @@
 import type { ProfileContent, SkillContent } from "./skill-schema";
-import type { CanonicalUnit, Flag, PriceSnapshot, RateBreakdown } from "./types";
+import type { CanonicalUnit, Flag, ItemType, PriceSnapshot, RateBreakdown } from "./types";
 import { evaluateCostModel, MissingPriceKeyError } from "./cost-engine";
 import { applyModelOverrides, applyPriceOverrides, applyLaborPremiumToSnapshot, type ProjectOverrides } from "./overrides";
 import { buildRollup, type QuoteRollup } from "./rollup";
 import { validateBand, validateUnit, checkRatios } from "./validation";
 import { lineAmountFils } from "./money";
 
-export type ItemType = "unit_rate" | "provisional_sum" | "dayworks" | "lump_sum" | "percentage";
+export type { ItemType };
 
 export interface MatchedItem {
   id: string;
