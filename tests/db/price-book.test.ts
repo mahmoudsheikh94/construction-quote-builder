@@ -17,4 +17,18 @@ describe("price book", () => {
     expect(history).toHaveLength(2);
     expect(history[0].priceFils).toBe(4_500); // newest first
   });
+
+  it("orders by effective_date as the PRIMARY key, not insertion order", async () => {
+    // Regression guard: getSnapshot must pick the entry with the latest
+    // effective_date, even when that entry was inserted FIRST (older created_at).
+    // Insert the newer-effective-date row first so its created_at is older;
+    // if effective_date weren't the primary sort, the later-inserted older-date
+    // row would wrongly win.
+    const key = `rebar_ton_${Date.now()}`;
+    await addPriceEntry({ key, labelAr: "حديد تسليح", unit: "ton", priceFils: 520_000, effectiveDate: "2026-06-01" });
+    await addPriceEntry({ key, labelAr: "حديد تسليح", unit: "ton", priceFils: 480_000, effectiveDate: "2026-01-01" });
+
+    const snap = await getSnapshot("2026-12-31");
+    expect(snap[key].priceFils).toBe(520_000); // June entry wins despite older created_at
+  });
 });
