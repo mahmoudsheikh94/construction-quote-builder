@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { toPricedRows } from "@/lib/export/priced-boq";
+import { toPricedRows, toPricedJson } from "@/lib/export/priced-boq";
 import type { RawLine } from "@/lib/ingest/types";
 import type { PricedLine } from "@/lib/domain/price-quote";
+import type { QuoteRollup } from "@/lib/domain/rollup";
 
 describe("toPricedRows", () => {
   it("joins raw lines with priced results, formatting fils as JD strings", () => {
@@ -35,5 +36,23 @@ describe("toPricedRows", () => {
     expect(rows[0].rateJD).toBe("1.000");
     expect(rows[1].itemCode).toBe("1/1");
     expect(rows[1].rateJD).toBe("2.000");
+  });
+});
+
+describe("toPricedJson", () => {
+  it("surfaces ingestion warnings so a silently-incomplete BOQ is visible", () => {
+    // PDF chunk failures, dual-notation checksum mismatches, and empty-sheet notices are
+    // computed by ingestExcel/ingestPdf but were previously dropped before reaching the
+    // operator-facing JSON output.
+    const rollup: QuoteRollup = { sections: [], grandTotalFils: 0 };
+    const warnings = ["فشل استخراج الصفحات 7-12: تعذّر الاتصال", "تعارض في الكمية للبند 3 (2/1): رقم=10 كتابة=12"];
+    const json = toPricedJson([], rollup, [], warnings);
+    expect(json.ingestionWarnings).toEqual(warnings);
+  });
+
+  it("defaults ingestionWarnings to an empty array when omitted", () => {
+    const rollup: QuoteRollup = { sections: [], grandTotalFils: 0 };
+    const json = toPricedJson([], rollup, []);
+    expect(json.ingestionWarnings).toEqual([]);
   });
 });

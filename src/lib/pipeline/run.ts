@@ -19,7 +19,7 @@ export async function runPipeline(input: {
   profileSlug: string;
   adapter: AIAdapter;
   asOf?: string;
-}): Promise<{ json: object; rows: PricedRow[]; rollup: QuoteRollup; projectFlags: Flag[] }> {
+}): Promise<{ json: object; rows: PricedRow[]; rollup: QuoteRollup; projectFlags: Flag[]; ingestionWarnings: string[] }> {
   // 1. Ingest
   const isExcel = /\.xlsx?$|\.xlsm$/i.test(input.file);
   const extraction = isExcel ? ingestExcel(input.file) : await ingestPdf(input.file, input.adapter);
@@ -63,6 +63,6 @@ export async function runPipeline(input: {
   // 4. Price + flag
   const result = assembleAndPrice({ items, skills, snapshot });
   const rows = toPricedRows(rawLines, result.lines);
-  const json = toPricedJson(rows, result.rollup, result.projectFlags);
-  return { json, rows, rollup: result.rollup, projectFlags: result.projectFlags };
+  const json = toPricedJson(rows, result.rollup, result.projectFlags, extraction.warnings);
+  return { json, rows, rollup: result.rollup, projectFlags: result.projectFlags, ingestionWarnings: extraction.warnings };
 }

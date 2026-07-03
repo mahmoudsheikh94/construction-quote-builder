@@ -139,4 +139,23 @@ describe("runPipeline (end to end, fake adapter)", () => {
     expect(row.flags).not.toContain("NO_MATCH");
     expect(row.rateJD).not.toBeNull();
   });
+
+  it("surfaces ingestion warnings through the pipeline output instead of dropping them", async () => {
+    // A sheet with no recognizable description column triggers ingestExcel's
+    // "تعذّر تحديد عمود الوصف" warning. Previously runPipeline used only
+    // extraction.lines and silently dropped extraction.warnings.
+    const boq4 = "tests/fixtures/run-boq-no-desc-col.xlsx";
+    const rows = [["foo", "bar", "baz"], ["x", "بلاط سيراميك أرضيات", "م2"]];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "BOQ");
+    writeFileSync(boq4, XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+
+    const adapter = makeAdapter(async () => '{"material":"ceramic"}');
+    const out = await runPipeline({ file: boq4, profileSlug, adapter });
+
+    expect(out.ingestionWarnings.length).toBeGreaterThan(0);
+    expect(out.ingestionWarnings[0]).toContain("عمود الوصف");
+    expect((out.json as { ingestionWarnings: string[] }).ingestionWarnings).toEqual(out.ingestionWarnings);
+  });
 });

@@ -25,12 +25,13 @@ export function toPricedRows(rawLines: RawLine[], lines: PricedLine[]): PricedRo
   });
 }
 
-export function toPricedJson(rows: PricedRow[], rollup: QuoteRollup, projectFlags: Flag[]) {
+export function toPricedJson(rows: PricedRow[], rollup: QuoteRollup, projectFlags: Flag[], ingestionWarnings: string[] = []) {
   return {
     rows,
     sections: rollup.sections.map((s) => ({ ...s, totalJD: filsToJDString(s.totalFils) })),
     grandTotalJD: filsToJDString(rollup.grandTotalFils),
     projectFlags: projectFlags.map((f) => ({ code: f.code, messageAr: f.messageAr })),
+    ingestionWarnings,
   };
 }
 

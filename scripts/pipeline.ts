@@ -18,5 +18,10 @@ async function main() {
   const grandTotalJD = (result.json as { grandTotalJD: string })["grandTotalJD"];
   console.log(`✅ سُعّر ${result.rows.length} بنداً (${flagged} بحاجة لمراجعة). المجموع: ${grandTotalJD} د.أ`);
   console.log(`   المخرجات: ${out}.json و ${out}.xlsx`);
+  if (result.ingestionWarnings.length > 0) {
+    console.log(`⚠️  ${result.ingestionWarnings.length} تحذير(ات) استخراج — راجع البند قد يكون ناقصاً:`);
+    for (const w of result.ingestionWarnings.slice(0, 5)) console.log(`   - ${w}`);
+    if (result.ingestionWarnings.length > 5) console.log(`   … و ${result.ingestionWarnings.length - 5} أخرى`);
+  }
 }
 main().catch((e) => { console.error(e); process.exit(1); });
