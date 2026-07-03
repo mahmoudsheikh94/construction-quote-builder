@@ -2,11 +2,12 @@ import type { AIAdapter } from "@/lib/ai/adapter";
 import { ingestExcel } from "@/lib/ingest/excel";
 import { ingestPdf } from "@/lib/ingest/pdf";
 import { classifyItemType } from "@/lib/ingest/item-type-gate";
-import { tagLine } from "./tag";
-import { matchLine } from "./match";
+import { chunk, mapLimit, batchTagLines, batchMatchLines } from "./batch";
 import { toMatchedItem, assembleAndPrice } from "./assemble";
+import type { MatchResult } from "./match";
 import { getActiveProfile, getActiveSkill } from "@/lib/db/skills";
 import { getSnapshot } from "@/lib/db/price-book";
+import { lookupBySignature, type LineTags } from "@/lib/db/corpus";
 import type { SkillContent } from "@/lib/domain/skill-schema";
 import type { MatchedItem } from "@/lib/domain/price-quote";
 import { toPricedRows, toPricedJson, type PricedRow } from "@/lib/export/priced-boq";
@@ -19,6 +20,8 @@ export async function runPipeline(input: {
   profileSlug: string;
   adapter: AIAdapter;
   asOf?: string;
+  batchSize?: number;
+  concurrency?: number;
 }): Promise<{ json: object; rows: PricedRow[]; rollup: QuoteRollup; projectFlags: Flag[]; ingestionWarnings: string[] }> {
   // 1. Ingest
   const isExcel = /\.xlsx?$|\.xlsm$/i.test(input.file);
@@ -35,30 +38,83 @@ export async function runPipeline(input: {
   }
   const snapshot = await getSnapshot(input.asOf);
 
-  // 3. Per line: classify → (unit_rate only) tag + match → MatchedItem
+  // 3. Classify + batch-tag + corpus-first + batch-match, all concurrent.
   const tradeSlugs = Object.keys(skills);
-  const items: MatchedItem[] = [];
-  for (const line of rawLines) {
-    const { itemType } = classifyItemType(line);
-    let match = null;
-    if (itemType === "unit_rate" && tradeSlugs.length > 0) {
-      // Tags describe the LINE, not the trade — tag once (recorded under the first
-      // candidate trade), then try each active trade's match against those same tags.
-      // (Small trade set per profile.) A failure here (e.g. AISchemaError after retries
-      // exhausted) must degrade this single line to NO_MATCH via priceQuote, never abort
-      // pricing for the whole run.
-      try {
-        const tags = await tagLine(input.adapter, tradeSlugs[0], line);
-        for (const trade of tradeSlugs) {
-          match = await matchLine(input.adapter, trade, tags, skills[trade].content, line.descriptionOriginal);
-          if (match) break;
-        }
-      } catch {
-        match = null;
+  const batchSize = input.batchSize ?? 25;
+  const concurrency = input.concurrency ?? 5;
+
+  // 3a. Classify all lines (sync, no AI). Non-unit-rate lines get match=null immediately.
+  const classified = rawLines.map((line) => ({ line, itemType: classifyItemType(line).itemType }));
+  const unitRate = classified.filter((c) => c.itemType === "unit_rate");
+
+  // 3b. Batch-tag all unit-rate lines (chunked, concurrent) against the first trade —
+  //     tags describe the line, not the trade, so tagging is trade-independent.
+  //     A throw degrades that CHUNK to empty tags; it never aborts the run.
+  const tagChunks = chunk(unitRate.map((c) => c.line), batchSize || 1);
+  const firstTrade = tradeSlugs[0];
+  const taggedChunks =
+    tradeSlugs.length > 0 && unitRate.length > 0
+      ? await mapLimit(tagChunks, concurrency, async (lines) => {
+          try {
+            return await batchTagLines(input.adapter, firstTrade, lines);
+          } catch {
+            return lines.map(() => ({}) as LineTags); // degrade whole chunk to empty tags
+          }
+        })
+      : tagChunks.map((lines) => lines.map(() => ({}) as LineTags));
+  const tags: LineTags[] = taggedChunks.flat(); // aligned to unitRate order
+
+  // 3c. Corpus-first: a line whose (trade, signature) already resolves needs no AI match.
+  //     Collect the misses into needMatch for batch-matching.
+  const matchByLineIndex = new Map<number, MatchResult | null>(); // key = index into unitRate
+  const needMatch: Array<{ uIdx: number; rawText: string; tags: LineTags }> = [];
+  for (let i = 0; i < unitRate.length; i++) {
+    const t = tags[i];
+    let hit: MatchResult | null = null;
+    for (const trade of tradeSlugs) {
+      const found = await lookupBySignature(trade, t);
+      if (found) {
+        hit = { trade, costModelId: found.costModelId, method: "deterministic", confidence: 1 };
+        break;
       }
     }
-    items.push(toMatchedItem(line, itemType, match));
+    if (hit) matchByLineIndex.set(i, hit);
+    else needMatch.push({ uIdx: i, rawText: unitRate[i].line.descriptionOriginal, tags: t });
   }
+
+  // 3d. Batch-match the remaining lines against each trade until matched.
+  //     A throw degrades that CHUNK to nulls (never aborts). Once a line is matched,
+  //     it's skipped on subsequent trades.
+  for (const trade of tradeSlugs) {
+    const still = needMatch.filter((n) => !matchByLineIndex.get(n.uIdx));
+    if (still.length === 0) break;
+    const mChunks = chunk(still, batchSize || 1);
+    const resultsPerChunk = await mapLimit(mChunks, concurrency, async (group) => {
+      try {
+        return await batchMatchLines(
+          input.adapter,
+          trade,
+          skills[trade].content,
+          group.map((g) => ({ rawText: g.rawText, tags: g.tags })),
+        );
+      } catch {
+        return group.map(() => null); // degrade whole chunk, never abort
+      }
+    });
+    const flat = resultsPerChunk.flat();
+    still.forEach((n, i) => {
+      if (flat[i]) matchByLineIndex.set(n.uIdx, flat[i]);
+    });
+  }
+
+  // 3e. Assemble MatchedItems in ORIGINAL rawLines order (pricing + rollup depend on it).
+  const uPos = new Map<RawLine, number>();
+  unitRate.forEach((c, i) => uPos.set(c.line, i));
+  const items: MatchedItem[] = classified.map(({ line, itemType }) => {
+    const i = uPos.get(line);
+    const match = itemType === "unit_rate" && i !== undefined ? (matchByLineIndex.get(i) ?? null) : null;
+    return toMatchedItem(line, itemType, match);
+  });
 
   // 4. Price + flag
   const result = assembleAndPrice({ items, skills, snapshot });

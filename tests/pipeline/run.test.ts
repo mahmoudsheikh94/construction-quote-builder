@@ -62,10 +62,13 @@ beforeAll(async () => {
 
 describe("runPipeline (end to end, fake adapter)", () => {
   it("ingests → tags → matches → prices an Excel BOQ", async () => {
-    // Fake adapter answers both the tag call and the semantic-match call by shape.
+    // Fake adapter answers both the batch-tag call and the batch-match call by shape.
     const adapter = makeAdapter(async (req) => {
-      if (req.prompt.includes("نماذج التسعير المتاحة")) return `{"costModelId":"${tradeSlug}.ceramic_floor","confidence":0.9}`;
-      return '{"material":"ceramic","dimensions":"60x60","category":"floor"}';
+      const idxs = [...req.prompt.matchAll(/^(\d+)\./gm)].map((m) => Number(m[1]));
+      if (req.prompt.includes("نماذج التسعير المتاحة")) {
+        return JSON.stringify({ matches: idxs.map((i) => ({ index: i, costModelId: `${tradeSlug}.ceramic_floor`, confidence: 0.9 })) });
+      }
+      return JSON.stringify({ tags: idxs.map((i) => ({ index: i, material: "ceramic", dimensions: "60x60", category: "floor" })) });
     });
     const out = await runPipeline({ file: boq, profileSlug, adapter });
     const row = out.rows.find((r) => r.itemCode === "5/4")!;
@@ -77,6 +80,9 @@ describe("runPipeline (end to end, fake adapter)", () => {
   it("degrades a single bad line to NO_MATCH instead of aborting the whole run", async () => {
     // One line's AI calls throw (simulating an AISchemaError after retries exhausted);
     // the other line's calls succeed. The bad line must not abort pricing for the good one.
+    // batchSize: 1 puts each line in its own chunk, so the throw degrades only that
+    // line's chunk — the Phase 2 "one bad line doesn't abort the run" guarantee, now
+    // verified at chunk granularity per the batching brief.
     const boq2 = "tests/fixtures/run-boq-partial-fail.xlsx";
     const rows = [
       ["الرقم", "وصف البند", "الوحدة", "الكمية"],
@@ -90,11 +96,14 @@ describe("runPipeline (end to end, fake adapter)", () => {
 
     const adapter = makeAdapter(async (req) => {
       if (req.prompt.includes("بند سيء")) throw new Error("malformed AI response (simulated AISchemaError)");
-      if (req.prompt.includes("نماذج التسعير المتاحة")) return `{"costModelId":"${tradeSlug}.ceramic_floor","confidence":0.9}`;
-      return '{"material":"ceramic","dimensions":"60x60","category":"floor"}';
+      const idxs = [...req.prompt.matchAll(/^(\d+)\./gm)].map((m) => Number(m[1]));
+      if (req.prompt.includes("نماذج التسعير المتاحة")) {
+        return JSON.stringify({ matches: idxs.map((i) => ({ index: i, costModelId: `${tradeSlug}.ceramic_floor`, confidence: 0.9 })) });
+      }
+      return JSON.stringify({ tags: idxs.map((i) => ({ index: i, material: "ceramic", dimensions: "60x60", category: "floor" })) });
     });
 
-    const out = await runPipeline({ file: boq2, profileSlug, adapter });
+    const out = await runPipeline({ file: boq2, profileSlug, adapter, batchSize: 1 });
 
     const badRow = out.rows.find((r) => r.itemCode === "1/1")!;
     expect(badRow.rateJD).toBeNull();
@@ -120,14 +129,17 @@ describe("runPipeline (end to end, fake adapter)", () => {
     let tagCalls = 0;
     let matchCalls = 0;
     const adapter = makeAdapter(async (req) => {
+      const idxs = [...req.prompt.matchAll(/^(\d+)\./gm)].map((m) => Number(m[1]));
       if (req.prompt.includes("نماذج التسعير المتاحة")) {
         matchCalls++;
         // Decline on the first (tiling) catalog, accept on the second (blockwork) catalog.
-        if (req.prompt.includes(`${tradeSlug}.ceramic_floor`)) return `{"costModelId":null,"confidence":0}`;
-        return `{"costModelId":"${tradeSlug2}.block_wall","confidence":0.85}`;
+        if (req.prompt.includes(`${tradeSlug}.ceramic_floor`)) {
+          return JSON.stringify({ matches: idxs.map((i) => ({ index: i, costModelId: null, confidence: 0 })) });
+        }
+        return JSON.stringify({ matches: idxs.map((i) => ({ index: i, costModelId: `${tradeSlug2}.block_wall`, confidence: 0.85 })) });
       }
       tagCalls++;
-      return '{"material":"block","category":"wall"}';
+      return JSON.stringify({ tags: idxs.map((i) => ({ index: i, material: "block", category: "wall" })) });
     });
 
     const out = await runPipeline({ file: boq3, profileSlug: profileSlug2, adapter });
@@ -157,5 +169,24 @@ describe("runPipeline (end to end, fake adapter)", () => {
     expect(out.ingestionWarnings.length).toBeGreaterThan(0);
     expect(out.ingestionWarnings[0]).toContain("عمود الوصف");
     expect((out.json as { ingestionWarnings: string[] }).ingestionWarnings).toEqual(out.ingestionWarnings);
+  });
+
+  it("prices via batched tag+match with the same result as per-line", async () => {
+    // Reuses the existing seeded skill/profile from the file's beforeAll.
+    // A fake adapter that answers batch-tag and batch-match by prompt shape.
+    const adapter = makeAdapter(async (req) => {
+      if (req.prompt.includes("نماذج التسعير المتاحة")) {
+        // batch match: map every listed index to the ceramic_floor model
+        const idxs = [...req.prompt.matchAll(/^(\d+)\./gm)].map((m) => Number(m[1]));
+        return JSON.stringify({ matches: idxs.map((i) => ({ index: i, costModelId: `${tradeSlug}.ceramic_floor`, confidence: 0.9 })) });
+      }
+      // batch tag
+      const idxs = [...req.prompt.matchAll(/^(\d+)\./gm)].map((m) => Number(m[1]));
+      return JSON.stringify({ tags: idxs.map((i) => ({ index: i, material: "ceramic", category: "floor" })) });
+    });
+    const out = await runPipeline({ file: boq, profileSlug, adapter, batchSize: 10, concurrency: 3 });
+    const row = out.rows.find((r) => r.itemCode === "5/4")!;
+    expect(row.rateJD).toBe("13.388");
+    expect(row.amountJD).toBe("36147.600");
   });
 });
