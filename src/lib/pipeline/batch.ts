@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { AIAdapter } from "@/lib/ai/adapter";
 import type { RawLine } from "@/lib/ingest/types";
 import { recordTagging, type LineTags } from "@/lib/db/corpus";
+import type { SkillContent } from "@/lib/domain/skill-schema";
+import type { MatchResult } from "./match";
 
 export function chunk<T>(items: T[], size: number): T[][] {
   if (size <= 0) throw new Error("chunk: size must be > 0");
@@ -66,6 +68,45 @@ export async function batchTagLines(adapter: AIAdapter, trade: string, lines: Ra
     if (Object.keys(out[i]).length > 0) {
       await recordTagging({ trade, rawText: lines[i].descriptionOriginal, tags: out[i] });
     }
+  }
+  return out;
+}
+
+export const BATCH_MATCH_SCHEMA = z.object({
+  matches: z.array(z.object({
+    index: z.number().int().nonnegative(),
+    costModelId: z.string().nullable(),
+    confidence: z.number().min(0).max(1),
+  })),
+});
+
+export async function batchMatchLines(
+  adapter: AIAdapter, trade: string, skill: SkillContent,
+  items: Array<{ rawText: string; tags: LineTags }>,
+): Promise<(MatchResult | null)[]> {
+  if (items.length === 0) return [];
+  const catalog = skill.costModels
+    .map((m) => `- ${m.id}: ${m.labelAr} [${m.unit}] كلمات: ${m.keywords.join("، ")}`).join("\n");
+  const numbered = items
+    .map((it, i) => `${i}. «${it.rawText}» سمات=${JSON.stringify(it.tags)}`).join("\n");
+
+  const res = await adapter.run<z.infer<typeof BATCH_MATCH_SCHEMA>>({
+    system: `اختر نموذج التسعير الأنسب لكل بند من القائمة دفعةً واحدة. أعِد المعرّف الأقرب أو null. لا تُسعّر. أعِد JSON: {"matches":[{"index":<الفهرس>,"costModelId":"<id> أو null","confidence":0..1}]}.`,
+    prompt: `نماذج التسعير المتاحة:\n${catalog}\n\nالبنود:\n${numbered}`,
+    schema: BATCH_MATCH_SCHEMA,
+  });
+
+  const valid = new Set(skill.costModels.map((m) => m.id));
+  const out: (MatchResult | null)[] = items.map(() => null);
+  for (const m of res.matches) {
+    if (m.index < 0 || m.index >= items.length) continue;
+    if (!m.costModelId || !valid.has(m.costModelId)) continue; // null or hallucinated → leave null
+    out[m.index] = { trade, costModelId: m.costModelId, method: "semantic", confidence: m.confidence };
+  }
+  // Record resolved matches so identical signatures short-circuit next time.
+  for (let i = 0; i < items.length; i++) {
+    const r = out[i];
+    if (r) await recordTagging({ trade, rawText: items[i].rawText, tags: items[i].tags, costModelId: r.costModelId });
   }
   return out;
 }
