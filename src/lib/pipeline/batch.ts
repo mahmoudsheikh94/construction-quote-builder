@@ -21,7 +21,7 @@ export async function mapLimit<T, R>(
       results[i] = await fn(items[i], i);
     }
   };
-  const n = Math.max(1, Math.min(limit, items.length));
+  const n = Math.min(limit, items.length); // 0 workers for empty input; caps at item count
   for (let w = 0; w < n; w++) workers.push(worker());
   await Promise.all(workers);
   return results;

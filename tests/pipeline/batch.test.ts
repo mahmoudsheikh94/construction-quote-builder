@@ -25,4 +25,16 @@ describe("mapLimit", () => {
   it("handles empty input", async () => {
     expect(await mapLimit([], 4, async (x) => x)).toEqual([]);
   });
+  it("caps workers at item count when limit exceeds it", async () => {
+    let active = 0, maxActive = 0;
+    const fn = async (n: number) => {
+      active++; maxActive = Math.max(maxActive, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      return n;
+    };
+    const out = await mapLimit([1, 2, 3], 10, fn); // limit > items
+    expect(out).toEqual([1, 2, 3]);
+    expect(maxActive).toBeLessThanOrEqual(3); // never more concurrent than items
+  });
 });
