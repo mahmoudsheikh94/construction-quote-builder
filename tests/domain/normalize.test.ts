@@ -48,6 +48,8 @@ describe("normalizeUnit", () => {
     expect(normalizeUnit("خزانة")).toBe("nr");  // cabinet/tank
     expect(normalizeUnit("لوحة")).toBe("nr");   // panel/board
     expect(normalizeUnit("طقم")).toBe("nr");    // set
+    expect(normalizeUnit("Nos")).toBe("nr");    // English plural count (AlSafi BOQ)
+    expect(normalizeUnit("Item")).toBe("nr");   // CSI "Item" unit (JAH preliminaries)
   });
   it("returns null for unknown units", () => {
     expect(normalizeUnit("bananas")).toBeNull();
