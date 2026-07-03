@@ -71,37 +71,37 @@ _(Filled in as phases complete, per workflow.)_
 Branch: main. Baseline: 81 tests passing.
 
 ### C1 — Duplicate itemCode collision (assemble.ts + priced-boq.ts)
-- [ ] `toMatchedItem` (src/lib/pipeline/assemble.ts:21): id = `${line.itemCode ?? "row"}-${line.sortOrder}`
-- [ ] `toPricedRows` (src/lib/export/priced-boq.ts:16): id = `${raw.itemCode ?? "row"}-${raw.sortOrder}` (same formula)
-- [ ] Keep `itemCode` as separate display field on PricedRow (already is)
-- [ ] New test: two raw lines, same itemCode "1/1", different sortOrder + different prices → each priced row gets its own correct rate. Confirm fails before fix.
-- [ ] Update existing id-format assertions in assemble.test.ts / priced-boq.test.ts / run.test.ts. Do NOT touch money assertions.
+- [x] `toMatchedItem` (src/lib/pipeline/assemble.ts:21): id = `${line.itemCode ?? "row"}-${line.sortOrder}`
+- [x] `toPricedRows` (src/lib/export/priced-boq.ts:16): id = `${raw.itemCode ?? "row"}-${raw.sortOrder}` (same formula)
+- [x] Keep `itemCode` as separate display field on PricedRow (already is)
+- [x] New test: two raw lines, same itemCode "1/1", different sortOrder + different prices → each priced row gets its own correct rate. Confirmed fails before fix.
+- [x] Update existing id-format assertions in assemble.test.ts / priced-boq.test.ts / run.test.ts. Money assertions untouched.
 
 ### C2 — One malformed AI response aborts whole pipeline (run.ts)
-- [ ] Wrap per-line tag+match block in try/catch in runPipeline loop
-- [ ] On catch: match = null, continue to next line
-- [ ] New test: fake adapter throws for one line's tag/match, succeeds for others → runPipeline returns, good lines priced, bad line NO_MATCH. Confirm fails before fix.
+- [x] Wrap per-line tag+match block in try/catch in runPipeline loop
+- [x] On catch: match = null, continue to next line
+- [x] New test: fake adapter throws for one line's tag/match, succeeds for others → runPipeline returns, good lines priced, bad line NO_MATCH. Confirmed fails before fix.
 
 ### I1 — provisional_sum/lump_sum never carry givenAmountFils
-- [ ] Investigate whether RawLine has a reliable JD-amount field for these types
-- [ ] Decision + document: keep NEEDS_MANUAL as visible known-limitation unless a safe unambiguous parse exists. No fabrication of money from non-money fields.
+- [x] Investigated: RawLine has no reliable JD-amount field for these types (only `quantityRaw`, shared/ambiguous with unit_rate quantities)
+- [x] Decision: kept NEEDS_MANUAL as visible known-limitation (already surfaced via flags → export today). No fabrication of money from non-money fields. Documented in fix-wave-report.md.
 
 ### I2 — tagLine re-called per trade (run.ts)
-- [ ] Hoist tagLine out of trade loop — call once per line (first candidate trade), loop matchLine per trade with same tags
-- [ ] Ensure run.test.ts fake adapter still passes
+- [x] Hoisted tagLine out of trade loop — call once per line (first candidate trade), loop matchLine per trade with same tags
+- [x] run.test.ts fake adapter still passes; new test asserts tag-call-count == 1 across 2 trades
 
 ### I3 — extraction warnings dropped (run.ts, priced-boq.ts, scripts/pipeline.ts)
-- [ ] Thread extraction.warnings through runPipeline's return value
-- [ ] Add `ingestionWarnings` field to toPricedJson output
-- [ ] Print count + first few in scripts/pipeline.ts CLI summary
+- [x] Threaded extraction.warnings through runPipeline's return value
+- [x] Added `ingestionWarnings` field to toPricedJson output
+- [x] Print count + first 5 in scripts/pipeline.ts CLI summary
 
 ### SEED RE-VALIDATION — scripts/seed.ts persist mode
-- [ ] Validate parsed draft JSON against DRAFT_SCHEMA before persisting
-- [ ] Throw clear Arabic error on failure
-- [ ] Confirm typecheck + seed test suite still passes
+- [x] Validate parsed draft JSON against DRAFT_SCHEMA before persisting
+- [x] Throw clear Arabic error on failure
+- [x] Confirmed typecheck + seed test suite still passes
 
 ### Final verification
-- [ ] Full `npm test` green (81 + new tests)
-- [ ] `npx tsc --noEmit` clean
-- [ ] Write report to .superpowers/sdd/fix-wave-report.md
-- [ ] Commit(s) with clear messages
+- [x] Full `npm test` green — 88 passed (81 baseline + 7 new)
+- [x] `npx tsc --noEmit` clean
+- [x] Wrote report to .superpowers/sdd/fix-wave-report.md
+- [x] Commits: 5f3d5bb (C1), 4affc80 (C2), 43930b2 (I2), cf65915 (I3), 347178c (seed)
