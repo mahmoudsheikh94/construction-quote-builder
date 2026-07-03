@@ -13,6 +13,7 @@
     "pipeline": "tsx scripts/pipeline.ts"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.49.0",
     "exceljs": "^4.4.0",
     "next": "^16.0.0",
