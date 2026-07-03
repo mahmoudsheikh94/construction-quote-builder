@@ -1,6 +1,7 @@
+import "./_env"; // must be first — loads .env.local before any Supabase client is built
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
-import { claudeCliAdapter } from "@/lib/ai/claude-cli";
-import { draftTradeSkill, persistReviewedSkill, DRAFT_SCHEMA } from "@/lib/seed/seed-from-priced";
+import { claudeCliAdapter } from "../src/lib/ai/claude-cli";
+import { draftTradeSkill, persistReviewedSkill, DRAFT_SCHEMA } from "../src/lib/seed/seed-from-priced";
 
 // Two modes:
 //   draft:   npx tsx scripts/seed.ts draft <trade> <slug> <nameAr> <pricedDoc>  → writes seed-draft-<slug>.json for review

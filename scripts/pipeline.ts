@@ -1,3 +1,4 @@
+import "./_env"; // must be first — loads .env.local before any Supabase client is built
 import { writeFileSync } from "node:fs";
 import { claudeCliAdapter } from "../src/lib/ai/claude-cli";
 import { runPipeline } from "../src/lib/pipeline/run";
