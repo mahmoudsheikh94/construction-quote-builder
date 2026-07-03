@@ -7,3 +7,6 @@ node_modules/
 
 # Large binary reference material (example tender BOQs/drawings) — kept local, read by the pipeline, not versioned
 reference-docs/
+
+supabase/.temp/
+next-env.d.ts
