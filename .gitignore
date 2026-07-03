@@ -8,6 +8,9 @@ node_modules/
 # Large binary reference material (example tender BOQs/drawings) — kept local, read by the pipeline, not versioned
 reference-docs/
 
+# Test fixtures (generated at runtime, not versioned)
+tests/fixtures/
+
 supabase/.temp/
 next-env.d.ts
 *.tsbuildinfo
