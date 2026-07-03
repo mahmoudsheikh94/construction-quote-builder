@@ -9,3 +9,13 @@ export interface PriceSnapshotEntry {
   unit: string;
 }
 export type PriceSnapshot = Record<string, PriceSnapshotEntry>;
+
+export interface RateBreakdown {
+  materialFils: number;
+  wasteFils: number;
+  laborFils: number;
+  equipmentFils: number;
+  markupFils: number;
+  rateFils: number;
+  priceEntryIds: Record<string, string>;
+}
