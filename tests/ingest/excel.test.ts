@@ -26,4 +26,11 @@ describe("ingestExcel", () => {
     expect(lines[0]).toMatchObject({ itemCode: "1/1", descriptionOriginal: "حفريات للأساسات", unitRaw: "م3", quantityRaw: "18000", sortOrder: 0 });
     expect(lines[1].descriptionOriginal).toContain("خرسانة");
   });
+
+  it("derives sectionRef from the item code prefix", () => {
+    // sectionRef drives rollup grouping downstream, so verify it maps correctly.
+    const { lines } = ingestExcel(fixture);
+    expect(lines[0].sectionRef).toBe("1"); // "1/1" -> "1"
+    expect(lines[1].sectionRef).toBe("2"); // "2/1" -> "2"
+  });
 });
