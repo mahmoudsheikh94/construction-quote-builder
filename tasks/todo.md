@@ -109,3 +109,41 @@ Branch: main. Baseline: 81 tests passing.
 - [x] `npx tsc --noEmit` clean
 - [x] Wrote report to .superpowers/sdd/fix-wave-report.md
 - [x] Commits: 5f3d5bb (C1), 4affc80 (C2), 43930b2 (I2), cf65915 (I3), 347178c (seed)
+
+---
+
+## Phase 3 — Web UI (2026-07-04) ✅ COMPLETE
+
+**Goal:** a Vercel-deployed, auth-gated, RTL Arabic web app so a trusted engineer can review priced quotes, correct line rates (with this-quote-vs-update-the-trade writeback — the self-improving loop), and author the rate library (price book + immutably-versioned trade cost models). Local CLI pipeline persists priced quotes to a shared cloud Supabase.
+
+**Architecture (deliberate split):** Vercel app = pure Supabase DB client, never shells the CLI, server actions + server components only. Local pipeline = the sole CLI-dependent piece; uses the service-role client to write quotes. One shared cloud Supabase; both point at it.
+
+### Tasks (all reviewed + approved, subagent-driven-development)
+- [x] P3-1 — @supabase/ssr browser + server client factories (anon key only, getAll/setAll)
+- [x] P3-2 — RLS migration: revoke anon, grant authenticated DML, permissive TO-authenticated policies on 11 tables; corrections table; quotes.name
+- [x] P3-3 — quote persistence repos (saveQuote/listQuotes/getQuote) + corrections log; follow-up migration fixed corrections service_role grant gap
+- [x] P3-4 — pipeline persists priced quote to shared DB (--name), maps PricedRow→SaveRow via parseJDToFils (no float)
+- [x] P3-5 — auth: proxy.ts session refresh + route gate (unauth→/login) + email/password login page
+- [x] P3-6 — authed app shell (RTL nav) + dashboard (recent quotes, stats)
+- [x] P3-7 — quotes list + detail + line correction dialog (scope quote|trade); applyCorrectionCore
+- [x] P3-8 — price-book editor (dated entries, JD↔fils)
+- [x] P3-9 — trades editor with immutable versioning + version history + one-click rollback
+- [x] P3-10 — Excel export route (Next 16 GET, awaited params, RTL, filsToJDString) + DEPLOY.md
+
+### Whole-branch review (Opus) — d6b9d2e..c1c50c6
+**VERDICT: Ready to deploy publicly. No Critical, no Important findings.**
+- **Service-role isolation PROVEN by build+grep:** the reviewer built the app and scanned `.next/static` — zero occurrences of the service-role key, its env-var name, `serviceClient`, or the non-public URL in the client bundle. The `"use server"` boundary ships RPC stubs only; client components import type-only symbols.
+- Money integer-fils throughout client-facing paths; correction writeback scope-correct (price-book write gated to scope==='trade'); versioning immutable (Phase-1 trigger intact); export route behind the proxy auth gate; RLS enabled on all app tables, anon holds zero grants + zero policies.
+
+### Post-review fix
+- [x] Finding #1 (least-privilege hygiene): revoked TRUNCATE/TRIGGER/REFERENCES from `authenticated` on all 11 tables — commit 41f237d. Not exploitable (PostgREST can't emit DDL), but now the grant set matches intent (DML only). **Verified:** all 7 migrations replay clean on a fresh DB → authenticated=DELETE,INSERT,SELECT,UPDATE, anon=0 grants.
+- Findings #2 (pipeline itemType hardcoded "unit_rate" — cosmetic label) and #3 (saveQuote no try/catch — local CLI, recoverable) triaged as DEFER to Phase 4. Backlog also notes saveQuote non-transactional + listQuotes N+1 (fine at 2-user scale).
+
+### State: tsc clean, 115 tests pass, build succeeds. Ready for the user's deploy step (create cloud Supabase + Vercel per DEPLOY.md).
+
+### Deploy handoff (user's step — see DEPLOY.md)
+1. Create hosted Supabase project; note URL + anon + service-role keys.
+2. `supabase link --project-ref <ref>` then `supabase db push` (applies all 7 migrations in order).
+3. Create the two users (Mahmoud + engineer) in the Supabase dashboard.
+4. Point local `.env.local` at the cloud project (incl. service-role key — local pipeline only).
+5. Deploy to Vercel; set **only** `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`. **Do NOT set the service-role key in Vercel.**
