@@ -27,6 +27,12 @@ const UNIT_MAP: Record<string, CanonicalUnit> = {
   "م ط": "lm", "مط": "lm", "lm": "lm", "ml": "lm", "m": "lm", "م": "lm",
   "طن": "ton", "ton": "ton", "t": "ton",
   "عدد": "nr", "no": "nr", "nr": "nr", "each": "nr", "ea": "nr",
+  // Discrete countable MEP/fit-out units common in Jordanian BOQs — all "count".
+  // (Deliberately excludes ambiguous ones like "مقطع"/aluminium profiles, which
+  // are usually measured per m² and should stay unknown so they flag for review.)
+  "نقطة": "nr", "نقطه": "nr", "point": "nr", "pt": "nr",
+  "خزانة": "nr", "خزانه": "nr", "لوحة": "nr", "لوحه": "nr", "panel": "nr",
+  "قطعة": "nr", "قطعه": "nr", "set": "nr", "طقم": "nr",
   "مقطوع": "ls", "بالمقطوع": "ls", "ls": "ls", "lump sum": "ls",
   "يوم": "day", "day": "day",
   "ليلة": "night", "night": "night",

@@ -40,8 +40,18 @@ describe("normalizeUnit", () => {
     expect(normalizeUnit("ليلة")).toBe("night");
     expect(normalizeUnit("حبة")).toBe("pc");
   });
+  it("maps common Jordanian MEP/fit-out count units to nr", () => {
+    // Surfaced by the Labs BOQ acceptance test: plumbing/electrical items priced
+    // per point/panel/cabinet were flagging UNIT_UNKNOWN.
+    expect(normalizeUnit("نقطة")).toBe("nr");   // point (plumbing/electrical)
+    expect(normalizeUnit("نقطة ")).toBe("nr");  // trailing space
+    expect(normalizeUnit("خزانة")).toBe("nr");  // cabinet/tank
+    expect(normalizeUnit("لوحة")).toBe("nr");   // panel/board
+    expect(normalizeUnit("طقم")).toBe("nr");    // set
+  });
   it("returns null for unknown units", () => {
     expect(normalizeUnit("bananas")).toBeNull();
     expect(normalizeUnit("")).toBeNull();
+    expect(normalizeUnit("مقطع")).toBeNull(); // aluminium profile — should flag for m² review, not silently count
   });
 });
