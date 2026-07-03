@@ -13,6 +13,22 @@ describe("toMatchedItem", () => {
     expect(mi.unitCanonical).toBe("m2");
     expect(mi.quantityThousandths).toBe(2_700_000);
     expect(mi.match?.costModelId).toBe("tiling.ceramic_floor");
+    expect(mi.id).toBe("5/4-0");
+  });
+  it("keeps duplicate itemCodes distinct by composing id with sortOrder", () => {
+    // Real BOQs can have two rows sharing the same itemCode (e.g. "1/1" repeated).
+    // The id must stay unique per raw line so downstream joins never collide.
+    const a = toMatchedItem(
+      { sortOrder: 0, itemCode: "1/1", sectionRef: "1", descriptionOriginal: "بند أول" },
+      "unit_rate", null,
+    );
+    const b = toMatchedItem(
+      { sortOrder: 1, itemCode: "1/1", sectionRef: "1", descriptionOriginal: "بند ثاني" },
+      "unit_rate", null,
+    );
+    expect(a.id).toBe("1/1-0");
+    expect(b.id).toBe("1/1-1");
+    expect(a.id).not.toBe(b.id);
   });
   it("yields null unit + null quantity when unparseable (downstream flags them)", () => {
     const mi = toMatchedItem(

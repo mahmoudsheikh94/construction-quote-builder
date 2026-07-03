@@ -18,7 +18,7 @@ export function toMatchedItem(line: RawLine, itemType: ItemType, match: MatchRes
     }
   }
   return {
-    id: line.itemCode ?? `row-${line.sortOrder}`,
+    id: `${line.itemCode ?? "row"}-${line.sortOrder}`,
     sectionRef: line.sectionRef,
     itemType,
     unitCanonical,

@@ -13,7 +13,7 @@ export interface PricedRow {
 export function toPricedRows(rawLines: RawLine[], lines: PricedLine[]): PricedRow[] {
   const byId = new Map(lines.map((l) => [l.id, l]));
   return rawLines.map((raw) => {
-    const id = raw.itemCode ?? `row-${raw.sortOrder}`;
+    const id = `${raw.itemCode ?? "row"}-${raw.sortOrder}`;
     const p = byId.get(id);
     return {
       itemCode: raw.itemCode, sectionRef: raw.sectionRef, description: raw.descriptionOriginal,

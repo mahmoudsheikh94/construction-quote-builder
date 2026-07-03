@@ -65,3 +65,43 @@ All 10 tasks implemented, per-task reviewed, and whole-branch reviewed (Opus). 4
 **Whole-branch review (Opus): READY for Phase 2, no Critical.** Applied immediately (commit 5820761): centralized `ItemType` into `types.ts`; reserved the `PRICE_UNIT_MISMATCH` flag code. Carried forward: I-1 price-unit cross-check → Phase 2 (see Phase 2 list); grant-tightening → Phase 3 precondition (see Phase 3 list); version-number race → multi-user phase (backstopped by unique constraint today). Full detail in `.superpowers/sdd/progress.md`.
 
 _(Filled in as phases complete, per workflow.)_
+
+## Fix-wave: Phase 2 whole-branch review findings (2026-07-03)
+
+Branch: main. Baseline: 81 tests passing.
+
+### C1 — Duplicate itemCode collision (assemble.ts + priced-boq.ts)
+- [ ] `toMatchedItem` (src/lib/pipeline/assemble.ts:21): id = `${line.itemCode ?? "row"}-${line.sortOrder}`
+- [ ] `toPricedRows` (src/lib/export/priced-boq.ts:16): id = `${raw.itemCode ?? "row"}-${raw.sortOrder}` (same formula)
+- [ ] Keep `itemCode` as separate display field on PricedRow (already is)
+- [ ] New test: two raw lines, same itemCode "1/1", different sortOrder + different prices → each priced row gets its own correct rate. Confirm fails before fix.
+- [ ] Update existing id-format assertions in assemble.test.ts / priced-boq.test.ts / run.test.ts. Do NOT touch money assertions.
+
+### C2 — One malformed AI response aborts whole pipeline (run.ts)
+- [ ] Wrap per-line tag+match block in try/catch in runPipeline loop
+- [ ] On catch: match = null, continue to next line
+- [ ] New test: fake adapter throws for one line's tag/match, succeeds for others → runPipeline returns, good lines priced, bad line NO_MATCH. Confirm fails before fix.
+
+### I1 — provisional_sum/lump_sum never carry givenAmountFils
+- [ ] Investigate whether RawLine has a reliable JD-amount field for these types
+- [ ] Decision + document: keep NEEDS_MANUAL as visible known-limitation unless a safe unambiguous parse exists. No fabrication of money from non-money fields.
+
+### I2 — tagLine re-called per trade (run.ts)
+- [ ] Hoist tagLine out of trade loop — call once per line (first candidate trade), loop matchLine per trade with same tags
+- [ ] Ensure run.test.ts fake adapter still passes
+
+### I3 — extraction warnings dropped (run.ts, priced-boq.ts, scripts/pipeline.ts)
+- [ ] Thread extraction.warnings through runPipeline's return value
+- [ ] Add `ingestionWarnings` field to toPricedJson output
+- [ ] Print count + first few in scripts/pipeline.ts CLI summary
+
+### SEED RE-VALIDATION — scripts/seed.ts persist mode
+- [ ] Validate parsed draft JSON against DRAFT_SCHEMA before persisting
+- [ ] Throw clear Arabic error on failure
+- [ ] Confirm typecheck + seed test suite still passes
+
+### Final verification
+- [ ] Full `npm test` green (81 + new tests)
+- [ ] `npx tsc --noEmit` clean
+- [ ] Write report to .superpowers/sdd/fix-wave-report.md
+- [ ] Commit(s) with clear messages
