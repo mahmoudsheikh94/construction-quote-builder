@@ -51,7 +51,7 @@ export function arabicCardinalToInt(words: string): number | null {
     const t = toks[i], t2 = toks[i + 1];
     const teen = consumeTeen(t, t2);
     if (teen !== null) { current += teen; matchedAny = true; i += 2; continue; }
-    if (TWO_THOUSAND.has(t)) { total += (current || 1) * 0 + 2000; current = 0; matchedAny = true; i++; continue; }
+    if (TWO_THOUSAND.has(t)) { total += 2000; current = 0; matchedAny = true; i++; continue; }
     if (THOUSAND_WORDS.has(t)) { total += (current || 1) * 1000; current = 0; matchedAny = true; i++; continue; }
     if (HUNDREDS[t] !== undefined) { current += HUNDREDS[t]; matchedAny = true; i++; continue; }
     if (TENS[t] !== undefined) { current += TENS[t]; matchedAny = true; i++; continue; }
