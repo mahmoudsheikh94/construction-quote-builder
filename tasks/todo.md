@@ -18,17 +18,21 @@ All 10 tasks implemented, per-task reviewed, and whole-branch reviewed (Opus). 4
 - [x] Task 9: Rollup engine (section/grand totals, carried-forward reconciliation)
 - [x] Task 10: Validation flags + priceQuote orchestrator
 
-## Phase 2 — AI Adapter + Ingestion + Matching (detailed plan written when Phase 2 starts)
+## Phase 2 — AI Adapter + Ingestion + Matching ✅ COMPLETE (detailed plan: `docs/superpowers/plans/2026-07-03-phase-2-ingestion-pipeline.md`)
 
-- [ ] AIAdapter interface + claude -p implementation (zod-validated, retry, typed errors)
-- [ ] Arabic number-words parser (dual-notation checksum)
-- [ ] Excel ingestion
-- [ ] PDF vision ingestion (two-pass for scanned docs)
-- [ ] Item-type gate
-- [ ] Tagger + corpus persistence
-- [ ] Deterministic matcher + semantic fallback matcher
-- [ ] **Price-book unit ↔ cost-model unit cross-check → emit `PRICE_UNIT_MISMATCH`** (flag code already reserved in types.ts; from Phase 1 whole-branch review I-1 — prevents silent mis-pricing when a price-book entry's unit disagrees with a cost-model component's assumption)
-- [ ] Headless pipeline CLI, E2E against Karak factory BOQ
+All 12 tasks + a 6-finding fix wave from the whole-branch review. 88/88 tests green, tsc clean. Extraction LIVE-verified against the real 103-page Karak factory BOQ (17 items, clean checksums). Ledger: `.superpowers/sdd/progress.md`.
+
+- [x] AIAdapter interface + claude -p implementation (zod-validated, retry, typed errors)
+- [x] Arabic number-words parser (dual-notation checksum)
+- [x] Excel ingestion
+- [x] PDF vision ingestion (page-range chunking + maxChunks cost bound)
+- [x] Item-type gate
+- [x] Tagger + corpus persistence (order-independent signatures, hit-count fast path)
+- [x] Deterministic matcher + semantic fallback matcher
+- [x] **Price-book unit ↔ cost-model unit cross-check → `PRICE_UNIT_MISMATCH`** (Phase 1 carry-forward I-1, done in P2-9)
+- [x] Headless pipeline CLI, E2E against a seeded BOQ (`npm run pipeline`)
+- [x] AI-draft seeding with human-review gate (`npm run` via scripts/seed.ts)
+- [x] Whole-branch fix wave: C1 duplicate-itemCode join collision, C2 per-line AI-error abort, I2 per-trade re-tagging, I3 dropped ingestion warnings, seed JSON re-validation
 
 ## Phase 3 — Web UI (Arabic RTL)
 
