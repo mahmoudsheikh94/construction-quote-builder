@@ -4,6 +4,13 @@ import {
   type SkillContent, type ProfileContent,
 } from "@/lib/domain/skill-schema";
 
+export async function listSkills() {
+  const { data, error } = await serviceClient()
+    .from("trade_skills").select("slug, name_ar, active_version_id").order("name_ar");
+  if (error) throw error;
+  return data.map((s) => ({ slug: s.slug, nameAr: s.name_ar, hasActive: !!s.active_version_id }));
+}
+
 export async function createSkill(slug: string, nameAr: string) {
   const { data, error } = await serviceClient()
     .from("trade_skills").insert({ slug, name_ar: nameAr }).select("id").single();
