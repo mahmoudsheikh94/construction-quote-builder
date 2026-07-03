@@ -41,13 +41,15 @@ export async function runPipeline(input: {
   for (const line of rawLines) {
     const { itemType } = classifyItemType(line);
     let match = null;
-    if (itemType === "unit_rate") {
-      // Try each active trade until one yields a match. (Small trade set per profile.)
-      // A failure here (e.g. AISchemaError after retries exhausted) must degrade this
-      // single line to NO_MATCH via priceQuote, never abort pricing for the whole run.
+    if (itemType === "unit_rate" && tradeSlugs.length > 0) {
+      // Tags describe the LINE, not the trade — tag once (recorded under the first
+      // candidate trade), then try each active trade's match against those same tags.
+      // (Small trade set per profile.) A failure here (e.g. AISchemaError after retries
+      // exhausted) must degrade this single line to NO_MATCH via priceQuote, never abort
+      // pricing for the whole run.
       try {
+        const tags = await tagLine(input.adapter, tradeSlugs[0], line);
         for (const trade of tradeSlugs) {
-          const tags = await tagLine(input.adapter, trade, line);
           match = await matchLine(input.adapter, trade, tags, skills[trade].content, line.descriptionOriginal);
           if (match) break;
         }

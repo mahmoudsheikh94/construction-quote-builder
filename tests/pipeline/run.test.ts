@@ -8,6 +8,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 
 const profileSlug = `resi_${Date.now()}`;
 const tradeSlug = `tiling_run_${Date.now()}`;
+const tradeSlug2 = `blockwork_run_${Date.now()}`;
 const boq = "tests/fixtures/run-boq.xlsx";
 
 beforeAll(async () => {
@@ -36,6 +37,26 @@ beforeAll(async () => {
 
   const { id } = await createProfile(profileSlug, "سكني");
   const pv = await createProfileVersion(id, { trades: [tradeSlug], ratioChecks: [] }, "v1");
+  await activateProfileVersion(id, pv.id);
+});
+
+// Second profile with TWO trades, used to prove tagLine is called once per line
+// (not once per candidate trade). tradeSlug2 has its own (empty-matching) skill so
+// the match loop must try both trades for the multi-trade test below.
+const profileSlug2 = `resi2_${Date.now()}`;
+
+beforeAll(async () => {
+  await persistReviewedSkill(tradeSlug2, "أعمال البلوك", {
+    trade: tradeSlug2,
+    costModels: [{
+      id: `${tradeSlug2}.block_wall`, labelAr: "بلوك", unit: "m2", keywords: ["بلوك"],
+      components: [{ id: "block", kind: "material", labelAr: "بلوك", priceBookKey: `block_${tradeSlug2}`, qtyPerUnit: "1" }],
+      wastePct: "5", markupPct: "15",
+    }],
+  }, [{ key: `block_${tradeSlug2}`, labelAr: "بلوك", unit: "m2", priceFils: 5000 }]);
+
+  const { id } = await createProfile(profileSlug2, "سكني متعدد المهن");
+  const pv = await createProfileVersion(id, { trades: [tradeSlug, tradeSlug2], ratioChecks: [] }, "v1");
   await activateProfileVersion(id, pv.id);
 });
 
@@ -82,5 +103,40 @@ describe("runPipeline (end to end, fake adapter)", () => {
     const goodRow = out.rows.find((r) => r.itemCode === "5/4")!;
     expect(goodRow.rateJD).toBe("13.388");
     expect(goodRow.amountJD).toBe("36147.600");
+  });
+
+  it("tags a line ONCE even when multiple candidate trades are tried, not once per trade", async () => {
+    // Tags describe the line, not the trade — tagging per trade wastes AI calls and
+    // writes duplicate line_item_tags rows. The first trade (tiling) must decline the
+    // match (via a null costModelId) so the match loop proceeds to the second trade
+    // (blockwork), which accepts it. tagLine must only run once regardless.
+    const boq3 = "tests/fixtures/run-boq-multi-trade.xlsx";
+    const rows = [["الرقم", "وصف البند", "الوحدة", "الكمية"], ["2/1", "جدار بلوك خرساني", "م2", "50"]];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "BOQ");
+    writeFileSync(boq3, XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+
+    let tagCalls = 0;
+    let matchCalls = 0;
+    const adapter = makeAdapter(async (req) => {
+      if (req.prompt.includes("نماذج التسعير المتاحة")) {
+        matchCalls++;
+        // Decline on the first (tiling) catalog, accept on the second (blockwork) catalog.
+        if (req.prompt.includes(`${tradeSlug}.ceramic_floor`)) return `{"costModelId":null,"confidence":0}`;
+        return `{"costModelId":"${tradeSlug2}.block_wall","confidence":0.85}`;
+      }
+      tagCalls++;
+      return '{"material":"block","category":"wall"}';
+    });
+
+    const out = await runPipeline({ file: boq3, profileSlug: profileSlug2, adapter });
+
+    expect(tagCalls).toBe(1);       // tagged once, not once per candidate trade
+    expect(matchCalls).toBe(2);     // matchLine still tried both trades
+
+    const row = out.rows.find((r) => r.itemCode === "2/1")!;
+    expect(row.flags).not.toContain("NO_MATCH");
+    expect(row.rateJD).not.toBeNull();
   });
 });
