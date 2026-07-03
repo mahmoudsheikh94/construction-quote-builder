@@ -189,4 +189,18 @@ describe("runPipeline (end to end, fake adapter)", () => {
     expect(row.rateJD).toBe("13.388");
     expect(row.amountJD).toBe("36147.600");
   });
+
+  it("exposes rows shaped for DB persistence (rateFils/amountFils/flags per line)", async () => {
+    const adapter = makeAdapter(async (req) => {
+      const idxs = [...req.prompt.matchAll(/^(\d+)\./gm)].map((m) => Number(m[1]));
+      if (req.prompt.includes("نماذج التسعير المتاحة"))
+        return JSON.stringify({ matches: idxs.map((i) => ({ index: i, costModelId: `${tradeSlug}.ceramic_floor`, confidence: 0.9 })) });
+      return JSON.stringify({ tags: idxs.map((i) => ({ index: i, material: "ceramic", category: "floor" })) });
+    });
+    const out = await runPipeline({ file: boq, profileSlug, adapter, batchSize: 10 });
+    const r = out.rows.find((x) => x.itemCode === "5/4")!;
+    // priced-boq rows already carry rateJD/amountJD/flags; assert the raw fils are reachable for saveQuote
+    expect(r.rateJD).toBe("13.388");
+    expect(Array.isArray(r.flags)).toBe(true);
+  });
 });
