@@ -25,6 +25,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/trades" className="text-gray-600 hover:text-gray-900 transition-colors">
           المهن والأسعار
         </Link>
+        <Link href="/labor-rates" className="text-gray-600 hover:text-gray-900 transition-colors">
+          أجور المهن
+        </Link>
         <Link href="/price-book" className="text-gray-600 hover:text-gray-900 transition-colors">
           دفتر الأسعار
         </Link>
