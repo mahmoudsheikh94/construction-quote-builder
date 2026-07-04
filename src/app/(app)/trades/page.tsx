@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listSkills } from "@/lib/db/skills";
 import { createClient } from "@/lib/supabase/server";
+import { AddTradeButton } from "./AddTradeButton";
 
 export default async function TradesList() {
   const db = await createClient();
@@ -8,9 +9,12 @@ export default async function TradesList() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">المهن والأسعار</h1>
-        <p className="text-sm text-gray-500 mt-1">نماذج التسعير لكل مهنة — كل حفظ ينشئ نسخة جديدة يمكن الرجوع إليها.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">المهن والأسعار</h1>
+          <p className="text-sm text-gray-500 mt-1">نماذج التسعير لكل مهنة — كل حفظ ينشئ نسخة جديدة يمكن الرجوع إليها.</p>
+        </div>
+        <AddTradeButton />
       </div>
       <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
         <ul className="divide-y divide-gray-100">
@@ -34,13 +38,6 @@ export default async function TradesList() {
             <li className="p-6 text-center text-gray-500">لا توجد مهن بعد.</li>
           )}
         </ul>
-      </div>
-      <div className="border border-dashed border-gray-300 rounded-xl p-4 text-sm text-gray-500">
-        لإضافة مهنة جديدة، افتح رابطاً بمُعرّف (slug) غير موجود، مثل{" "}
-        <Link href="/trades/new-trade" className="text-blue-700 font-mono">
-          /trades/new-trade
-        </Link>{" "}
-        ثم احفظ أول نسخة له.
       </div>
     </div>
   );
