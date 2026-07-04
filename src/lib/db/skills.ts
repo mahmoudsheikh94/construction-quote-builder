@@ -1,31 +1,32 @@
 import { serviceClient } from "./client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   SkillContentSchema, ProfileContentSchema,
   type SkillContent, type ProfileContent,
 } from "@/lib/domain/skill-schema";
 
-export async function listSkills() {
-  const { data, error } = await serviceClient()
+export async function listSkills(db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("trade_skills").select("slug, name_ar, active_version_id").order("name_ar");
   if (error) throw error;
   return data.map((s) => ({ slug: s.slug, nameAr: s.name_ar, hasActive: !!s.active_version_id }));
 }
 
-export async function createSkill(slug: string, nameAr: string) {
-  const { data, error } = await serviceClient()
+export async function createSkill(slug: string, nameAr: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("trade_skills").insert({ slug, name_ar: nameAr }).select("id").single();
   if (error) throw error;
   return data;
 }
 
-export async function createSkillVersion(skillId: string, content: SkillContent, changelog: string) {
+export async function createSkillVersion(skillId: string, content: SkillContent, changelog: string, db: SupabaseClient = serviceClient()) {
   const parsed = SkillContentSchema.parse(content);
-  const { data: latest, error: qErr } = await serviceClient()
+  const { data: latest, error: qErr } = await db
     .from("skill_versions").select("version_number, id")
     .eq("skill_id", skillId).order("version_number", { ascending: false }).limit(1);
   if (qErr) throw qErr;
   const versionNumber = (latest?.[0]?.version_number ?? 0) + 1;
-  const { data, error } = await serviceClient()
+  const { data, error } = await db
     .from("skill_versions")
     .insert({
       skill_id: skillId, version_number: versionNumber, content: parsed,
@@ -36,18 +37,18 @@ export async function createSkillVersion(skillId: string, content: SkillContent,
   return { id: data.id, versionNumber };
 }
 
-export async function activateSkillVersion(skillId: string, versionId: string) {
-  const { error } = await serviceClient()
+export async function activateSkillVersion(skillId: string, versionId: string, db: SupabaseClient = serviceClient()) {
+  const { error } = await db
     .from("trade_skills").update({ active_version_id: versionId }).eq("id", skillId);
   if (error) throw error;
 }
 
-export async function getActiveSkill(slug: string) {
-  const { data, error } = await serviceClient()
+export async function getActiveSkill(slug: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("trade_skills").select("active_version_id").eq("slug", slug).single();
   if (error) throw error;
   if (!data.active_version_id) return null;
-  const { data: v, error: vErr } = await serviceClient()
+  const { data: v, error: vErr } = await db
     .from("skill_versions").select("id, version_number, content")
     .eq("id", data.active_version_id).single();
   if (vErr) throw vErr;
@@ -58,8 +59,8 @@ export async function getActiveSkill(slug: string) {
   };
 }
 
-export async function listSkillVersions(skillId: string) {
-  const { data, error } = await serviceClient()
+export async function listSkillVersions(skillId: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("skill_versions").select("id, version_number, changelog, created_at")
     .eq("skill_id", skillId).order("version_number", { ascending: false });
   if (error) throw error;
@@ -70,21 +71,21 @@ export async function listSkillVersions(skillId: string) {
 }
 
 // Profiles: same pattern.
-export async function createProfile(slug: string, nameAr: string) {
-  const { data, error } = await serviceClient()
+export async function createProfile(slug: string, nameAr: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("project_type_profiles").insert({ slug, name_ar: nameAr }).select("id").single();
   if (error) throw error;
   return data;
 }
 
-export async function createProfileVersion(profileId: string, content: ProfileContent, changelog: string) {
+export async function createProfileVersion(profileId: string, content: ProfileContent, changelog: string, db: SupabaseClient = serviceClient()) {
   const parsed = ProfileContentSchema.parse(content);
-  const { data: latest, error: qErr } = await serviceClient()
+  const { data: latest, error: qErr } = await db
     .from("profile_versions").select("version_number")
     .eq("profile_id", profileId).order("version_number", { ascending: false }).limit(1);
   if (qErr) throw qErr;
   const versionNumber = (latest?.[0]?.version_number ?? 0) + 1;
-  const { data, error } = await serviceClient()
+  const { data, error } = await db
     .from("profile_versions")
     .insert({ profile_id: profileId, version_number: versionNumber, content: parsed, changelog })
     .select("id").single();
@@ -92,18 +93,18 @@ export async function createProfileVersion(profileId: string, content: ProfileCo
   return { id: data.id, versionNumber };
 }
 
-export async function activateProfileVersion(profileId: string, versionId: string) {
-  const { error } = await serviceClient()
+export async function activateProfileVersion(profileId: string, versionId: string, db: SupabaseClient = serviceClient()) {
+  const { error } = await db
     .from("project_type_profiles").update({ active_version_id: versionId }).eq("id", profileId);
   if (error) throw error;
 }
 
-export async function getActiveProfile(slug: string) {
-  const { data, error } = await serviceClient()
+export async function getActiveProfile(slug: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("project_type_profiles").select("active_version_id").eq("slug", slug).single();
   if (error) throw error;
   if (!data.active_version_id) return null;
-  const { data: v, error: vErr } = await serviceClient()
+  const { data: v, error: vErr } = await db
     .from("profile_versions").select("id, version_number, content")
     .eq("id", data.active_version_id).single();
   if (vErr) throw vErr;

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { listSkills } from "@/lib/db/skills";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function TradesList() {
-  const skills = await listSkills();
+  const db = await createClient();
+  const skills = await listSkills(db);
 
   return (
     <div className="space-y-4">

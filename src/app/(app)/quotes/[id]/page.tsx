@@ -1,9 +1,11 @@
 import { getQuote } from "@/lib/db/quotes";
+import { createClient } from "@/lib/supabase/server";
 import { QuoteTable } from "./QuoteTable";
 
 export default async function QuoteDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const quote = await getQuote(id);
+  const db = await createClient();
+  const quote = await getQuote(id, db);
 
   return (
     <div className="space-y-4">

@@ -1,4 +1,5 @@
 import { serviceClient } from "./client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CanonicalUnit, ItemType } from "@/lib/domain/types";
 
 export type { ItemType };
@@ -30,8 +31,8 @@ export interface LineItemRow {
   flags: unknown[];
 }
 
-export async function createProject(input: { name: string; projectType?: string; description?: string }) {
-  const { data, error } = await serviceClient()
+export async function createProject(input: { name: string; projectType?: string; description?: string }, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("projects")
     .insert({ name: input.name, project_type: input.projectType, description: input.description })
     .select("id")
@@ -40,14 +41,14 @@ export async function createProject(input: { name: string; projectType?: string;
   return data;
 }
 
-export async function createQuote(projectId: string) {
-  const { data, error } = await serviceClient()
+export async function createQuote(projectId: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("quotes").insert({ project_id: projectId }).select("id").single();
   if (error) throw error;
   return data;
 }
 
-export async function insertLineItems(quoteId: string, items: NewLineItem[]) {
+export async function insertLineItems(quoteId: string, items: NewLineItem[], db: SupabaseClient = serviceClient()) {
   const rows = items.map((i) => ({
     quote_id: quoteId,
     sort_order: i.sortOrder,
@@ -59,12 +60,12 @@ export async function insertLineItems(quoteId: string, items: NewLineItem[]) {
     quantity_thousandths: i.quantityThousandths,
     item_type: i.itemType ?? "unit_rate",
   }));
-  const { error } = await serviceClient().from("line_items").insert(rows);
+  const { error } = await db.from("line_items").insert(rows);
   if (error) throw error;
 }
 
-export async function getQuoteItems(quoteId: string): Promise<LineItemRow[]> {
-  const { data, error } = await serviceClient()
+export async function getQuoteItems(quoteId: string, db: SupabaseClient = serviceClient()): Promise<LineItemRow[]> {
+  const { data, error } = await db
     .from("line_items").select("*").eq("quote_id", quoteId).order("sort_order");
   if (error) throw error;
   return data as LineItemRow[];
@@ -77,9 +78,9 @@ export interface SaveRow {
   rateFils: number | null; amountFils: number | null; flags: string[];
 }
 
-export async function saveQuote(input: { name: string; rows: SaveRow[] }): Promise<{ quoteId: string }> {
-  const sc = serviceClient();
-  const proj = await createProject({ name: input.name });
+export async function saveQuote(input: { name: string; rows: SaveRow[] }, db: SupabaseClient = serviceClient()): Promise<{ quoteId: string }> {
+  const sc = db;
+  const proj = await createProject({ name: input.name }, sc);
   const { data: q, error: qErr } = await sc.from("quotes")
     .insert({ project_id: proj.id, name: input.name, status: "final" }).select("id").single();
   if (qErr) throw qErr;
@@ -94,8 +95,8 @@ export async function saveQuote(input: { name: string; rows: SaveRow[] }): Promi
   return { quoteId: q.id };
 }
 
-export async function listQuotes() {
-  const sc = serviceClient();
+export async function listQuotes(db: SupabaseClient = serviceClient()) {
+  const sc = db;
   const { data: quotes, error } = await sc.from("quotes")
     .select("id, name, created_at").order("created_at", { ascending: false });
   if (error) throw error;
@@ -110,10 +111,10 @@ export async function listQuotes() {
   return out;
 }
 
-export async function getQuote(id: string): Promise<{ id: string; name: string | null; lines: LineItemRow[] }> {
-  const sc = serviceClient();
+export async function getQuote(id: string, db: SupabaseClient = serviceClient()): Promise<{ id: string; name: string | null; lines: LineItemRow[] }> {
+  const sc = db;
   const { data: q, error } = await sc.from("quotes").select("id, name").eq("id", id).single();
   if (error) throw error;
-  const lines = await getQuoteItems(id);
+  const lines = await getQuoteItems(id, sc);
   return { id: q.id, name: q.name, lines };
 }

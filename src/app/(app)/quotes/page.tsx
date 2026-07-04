@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { listQuotes } from "@/lib/db/quotes";
 import { filsToJDString } from "@/lib/domain/money";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function QuotesList() {
-  const quotes = await listQuotes();
+  const db = await createClient();
+  const quotes = await listQuotes(db);
 
   return (
     <div className="space-y-4">

@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { applyCorrectionCore } from "@/app/(app)/quotes/[id]/actions";
+import { applyCorrectionCore } from "@/app/(app)/quotes/[id]/core";
 import { saveQuote, getQuote } from "@/lib/db/quotes";
 import { getSnapshot } from "@/lib/db/price-book";
+import { testClient } from "../helpers/db";
+
+const db = testClient();
 
 describe("applyCorrection", () => {
   it("scope=quote updates only the line; scope=trade also writes a price-book entry", async () => {
@@ -12,14 +15,14 @@ describe("applyCorrection", () => {
     const line = q.lines[0];
 
     // quote-only: line updates, no price-book change
-    await applyCorrectionCore({ lineItemId: line.id, newRateJD: "18.000", quantityThousandths: 1_000, scope: "quote" });
+    await applyCorrectionCore({ lineItemId: line.id, newRateJD: "18.000", quantityThousandths: 1_000, scope: "quote" }, db);
     const q2 = await getQuote(quoteId);
     expect(q2.lines[0].rate_fils).toBe(18000);
     expect(q2.lines[0].amount_fils).toBe(18000); // 1 × 18
 
     // trade scope: also writes a dated price-book entry
     const key = `tile_correction_${Date.now()}`;
-    await applyCorrectionCore({ lineItemId: line.id, newRateJD: "16.000", quantityThousandths: 1_000, scope: "trade", priceBookKey: key, unit: "m2", labelAr: "بلاط" });
+    await applyCorrectionCore({ lineItemId: line.id, newRateJD: "16.000", quantityThousandths: 1_000, scope: "trade", priceBookKey: key, unit: "m2", labelAr: "بلاط" }, db);
     const snap = await getSnapshot();
     expect(snap[key].priceFils).toBe(16000);
   });

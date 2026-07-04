@@ -1,10 +1,11 @@
 import { serviceClient } from "./client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PriceSnapshot } from "@/lib/domain/types";
 
 export async function addPriceEntry(input: {
   key: string; labelAr: string; unit: string; priceFils: number; effectiveDate?: string;
-}) {
-  const { data, error } = await serviceClient()
+}, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("price_book_entries")
     .insert({
       key: input.key, label_ar: input.labelAr, unit: input.unit,
@@ -15,9 +16,9 @@ export async function addPriceEntry(input: {
   return data;
 }
 
-export async function getSnapshot(asOf?: string): Promise<PriceSnapshot> {
+export async function getSnapshot(asOf?: string, db: SupabaseClient = serviceClient()): Promise<PriceSnapshot> {
   const date = asOf ?? new Date().toISOString().slice(0, 10);
-  const { data, error } = await serviceClient()
+  const { data, error } = await db
     .from("price_book_entries")
     .select("id, key, unit, price_fils, effective_date, created_at")
     .lte("effective_date", date)
@@ -36,8 +37,8 @@ export async function getSnapshot(asOf?: string): Promise<PriceSnapshot> {
   return snapshot;
 }
 
-export async function getHistory(key: string) {
-  const { data, error } = await serviceClient()
+export async function getHistory(key: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
     .from("price_book_entries")
     .select("price_fils, effective_date")
     .eq("key", key)

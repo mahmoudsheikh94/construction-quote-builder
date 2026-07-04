@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { signOut } from "../login/actions";
 
+// These pages read per-request session cookies (RLS-enforced) — never prerender them at build.
+export const dynamic = "force-dynamic";
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50">

@@ -2,10 +2,12 @@ import { getQuote } from "@/lib/db/quotes";
 import { buildRollup } from "@/lib/domain/rollup";
 import ExcelJS from "exceljs";
 import { filsToJDString } from "@/lib/domain/money";
+import { createClient } from "@/lib/supabase/server";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const q = await getQuote(id);
+  const db = await createClient();
+  const q = await getQuote(id, db);
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("عرض السعر", { views: [{ rightToLeft: true }] });
   ws.columns = [

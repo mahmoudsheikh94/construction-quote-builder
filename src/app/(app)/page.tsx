@@ -2,9 +2,11 @@ import Link from "next/link";
 import { listQuotes } from "@/lib/db/quotes";
 import { listSkills } from "@/lib/db/skills";
 import { filsToJDString } from "@/lib/domain/money";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function Dashboard() {
-  const [quotes, skills] = await Promise.all([listQuotes(), listSkills()]);
+  const db = await createClient();
+  const [quotes, skills] = await Promise.all([listQuotes(db), listSkills(db)]);
   const recent = quotes.slice(0, 5);
   const flaggedTotal = quotes.reduce((a, q) => a + q.flaggedCount, 0);
 

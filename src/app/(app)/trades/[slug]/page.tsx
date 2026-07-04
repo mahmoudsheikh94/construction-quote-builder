@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { getActiveSkill, listSkillVersions } from "@/lib/db/skills";
-import { serviceClient } from "@/lib/db/client";
+import { createClient } from "@/lib/supabase/server";
 import { TradeEditor } from "./TradeEditor";
 import { VersionHistory } from "./VersionHistory";
 
 export default async function TradePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const active = await getActiveSkill(slug);
-  const { data: skill } = await serviceClient()
+  const db = await createClient();
+  const active = await getActiveSkill(slug, db);
+  const { data: skill } = await db
     .from("trade_skills").select("id, name_ar").eq("slug", slug).maybeSingle();
-  const versions = skill ? await listSkillVersions(skill.id) : [];
+  const versions = skill ? await listSkillVersions(skill.id, db) : [];
 
   return (
     <div className="space-y-8">
