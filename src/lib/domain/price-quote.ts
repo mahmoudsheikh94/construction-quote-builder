@@ -1,10 +1,11 @@
 import type { ProfileContent, SkillContent } from "./skill-schema";
 import type { CanonicalUnit, Flag, ItemType, PriceSnapshot, RateBreakdown } from "./types";
 import { evaluateCostModel, MissingPriceKeyError } from "./cost-engine";
-import { applyModelOverrides, applyPriceOverrides, applyLaborPremiumToSnapshot, type ProjectOverrides } from "./overrides";
+import { applyModelOverrides, applyPriceOverrides, applyLaborPremiumToSnapshot, burdenNumFromOverrides, type ProjectOverrides } from "./overrides";
 import { buildRollup, type QuoteRollup } from "./rollup";
 import { validateBand, validateUnit, checkRatios } from "./validation";
 import { lineAmountFils } from "./money";
+import { computeLossMultiplier, type QuoteConditions, type LineConditions, type ConditionSeedTables } from "./productivity";
 
 export type { ItemType };
 
@@ -15,6 +16,7 @@ export interface MatchedItem {
   unitCanonical: CanonicalUnit | null;
   quantityThousandths: number | null;
   givenAmountFils?: number;
+  lineConditions?: LineConditions;
   match: { trade: string; costModelId: string; method: "deterministic" | "semantic"; confidence: number } | null;
 }
 
@@ -33,7 +35,10 @@ export function priceQuote(input: {
   snapshot: PriceSnapshot;
   overrides?: ProjectOverrides;
   ratioChecks?: ProfileContent["ratioChecks"];
+  quoteConditions?: QuoteConditions;
+  seedTables?: ConditionSeedTables;
 }): { lines: PricedLine[]; rollup: QuoteRollup; projectFlags: Flag[] } {
+  const burdenNum = burdenNumFromOverrides(input.overrides);
   const laborKeys = Object.values(input.skills).flatMap((s) =>
     s.content.costModels.flatMap((m) =>
       m.components.filter((c) => c.kind === "labor").map((c) => c.priceBookKey),
@@ -82,7 +87,14 @@ export function priceQuote(input: {
 
     let breakdown: RateBreakdown;
     try {
-      breakdown = evaluateCostModel(model, snapshot);
+      const loss = input.quoteConditions && input.seedTables
+        ? computeLossMultiplier(input.quoteConditions, item.lineConditions ?? null, input.seedTables)
+        : null;
+      breakdown = evaluateCostModel(model, snapshot, { burdenNum, L: loss?.lMicro ?? 1_000_000n });
+      if (loss) {
+        breakdown.productivityLoss = loss.breakdown.productivityLoss;
+        breakdown.sources = loss.breakdown.sources;
+      }
     } catch (e) {
       if (e instanceof MissingPriceKeyError) {
         return unpriced(item, [{

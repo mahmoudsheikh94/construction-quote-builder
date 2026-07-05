@@ -63,8 +63,13 @@ export function assembleAndPrice(input: {
   skills: Record<string, { content: SkillContent; versionId: string }>;
   snapshot: PriceSnapshot;
   overrides?: ProjectOverrides;
+  quoteConditions?: Parameters<typeof priceQuote>[0]["quoteConditions"];
+  seedTables?: Parameters<typeof priceQuote>[0]["seedTables"];
 }): { lines: PricedLine[]; rollup: QuoteRollup; projectFlags: Flag[] } {
-  const result = priceQuote({ items: input.items, skills: input.skills, snapshot: input.snapshot, overrides: input.overrides });
+  const result = priceQuote({
+    items: input.items, skills: input.skills, snapshot: input.snapshot,
+    overrides: input.overrides, quoteConditions: input.quoteConditions, seedTables: input.seedTables,
+  });
   const extra = priceUnitMismatchFlags(input.items, input.skills, input.snapshot);
   // attach each price-unit flag to its line
   for (const f of extra) {

@@ -25,6 +25,11 @@ export interface RateBreakdown {
   markupFils: number;
   rateFils: number;
   priceEntryIds: Record<string, string>;
+  // Phase C (optional; present only when a productivity multiplier applied)
+  productivityLoss?: number;
+  sources?: Record<string, number>;
+  // Phase C (optional; set when an engineer manually overrode the computed rate)
+  manualOverride?: boolean;
 }
 
 export type FlagCode =
