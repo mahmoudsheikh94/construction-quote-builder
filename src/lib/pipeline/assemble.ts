@@ -5,6 +5,7 @@ import { normalizeUnit, parseQuantityToThousandths } from "@/lib/domain/normaliz
 import { priceQuote, type MatchedItem, type PricedLine } from "@/lib/domain/price-quote";
 import type { MatchResult } from "./match";
 import type { QuoteRollup } from "@/lib/domain/rollup";
+import type { ProjectOverrides } from "@/lib/domain/overrides";
 
 export function toMatchedItem(line: RawLine, itemType: ItemType, match: MatchResult | null): MatchedItem {
   let unitCanonical: CanonicalUnit | null = null;
@@ -61,8 +62,9 @@ export function assembleAndPrice(input: {
   items: MatchedItem[];
   skills: Record<string, { content: SkillContent; versionId: string }>;
   snapshot: PriceSnapshot;
+  overrides?: ProjectOverrides;
 }): { lines: PricedLine[]; rollup: QuoteRollup; projectFlags: Flag[] } {
-  const result = priceQuote({ items: input.items, skills: input.skills, snapshot: input.snapshot });
+  const result = priceQuote({ items: input.items, skills: input.skills, snapshot: input.snapshot, overrides: input.overrides });
   const extra = priceUnitMismatchFlags(input.items, input.skills, input.snapshot);
   // attach each price-unit flag to its line
   for (const f of extra) {
