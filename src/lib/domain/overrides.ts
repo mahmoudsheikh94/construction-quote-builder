@@ -84,6 +84,29 @@ export function applyPriceOverrides(snapshot: PriceSnapshot, o?: ProjectOverride
   return out;
 }
 
+// Multiply two decimal strings (each up to 6 dp) and return a trimmed decimal string.
+function mulDecimalStrings(a: string, b: string): string {
+  const product = parseDecimalToMicro(a) * parseDecimalToMicro(b); // micro * micro = 1e12 scale
+  const whole = product / MICRO / MICRO;
+  const frac = (product / MICRO) % MICRO; // remaining 6-dp fraction
+  const fracStr = frac.toString().padStart(6, "0").replace(/0+$/, "");
+  return fracStr ? `${whole}.${fracStr}` : `${whole}`;
+}
+
+// Scale only material + equipment component quantities by the size factor (fixed/bulk
+// costs benefit from scale; labor productivity is never scaled). No schema change.
+export function applySizeFactorToModel(model: CostModel, sizeFactor?: string): CostModel {
+  if (!sizeFactor) return model;
+  return {
+    ...model,
+    components: model.components.map((c) =>
+      c.kind === "labor" || c.qtyPerUnit == null
+        ? c
+        : { ...c, qtyPerUnit: mulDecimalStrings(c.qtyPerUnit, sizeFactor) },
+    ),
+  };
+}
+
 export function applyModelOverrides(model: CostModel, trade: string, o?: ProjectOverrides): CostModel {
   if (!o) return model;
   const m = o.models?.[model.id];
