@@ -20,14 +20,25 @@ export interface AIAdapter { run<T>(req: AIRequest): Promise<T>; }
 export type Runner = (req: AIRequest) => Promise<string>;
 
 export function extractJson(raw: string): unknown {
+  // Prefer a fenced ```json block if present (the model's canonical wrapper).
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fenced ? fenced[1] : raw;
-  const start = candidate.indexOf("{");
-  const startArr = candidate.indexOf("[");
-  const from = start === -1 ? startArr : startArr === -1 ? start : Math.min(start, startArr);
-  if (from === -1) throw new Error("لا يوجد JSON في مخرجات الذكاء الاصطناعي");
-  const end = Math.max(candidate.lastIndexOf("}"), candidate.lastIndexOf("]"));
-  return JSON.parse(candidate.slice(from, end + 1));
+
+  // Naive first-bracket-to-last-bracket slicing breaks when prose contains stray
+  // brackets (e.g. "[As per the drawing]") before the real payload. Instead, try
+  // each bracket start position in order and return the first span that parses.
+  for (let i = 0; i < candidate.length; i++) {
+    const ch = candidate[i];
+    if (ch !== "{" && ch !== "[") continue;
+    const end = ch === "{" ? candidate.lastIndexOf("}") : candidate.lastIndexOf("]");
+    if (end <= i) continue;
+    try {
+      return JSON.parse(candidate.slice(i, end + 1));
+    } catch {
+      // stray bracket in prose — advance to the next candidate start.
+    }
+  }
+  throw new Error("لا يوجد JSON في مخرجات الذكاء الاصطناعي");
 }
 
 export function makeAdapter(runner: Runner): AIAdapter {

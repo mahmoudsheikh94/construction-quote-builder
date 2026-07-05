@@ -11,6 +11,16 @@ describe("extractJson", () => {
   it("parses JSON inside a fenced code block with preamble", () => {
     expect(extractJson('Sure!\n```json\n{"a":2}\n```\n')).toEqual({ a: 2 });
   });
+  it("ignores bracket-looking prose before the real JSON array", () => {
+    // The model sometimes writes a stray "[As per the drawing]" inside prose before
+    // the actual payload — the naive first-[-to-last-] slice would fail on it.
+    const raw = 'Here are the tags [As per the drawing]:\n{"tags":[{"index":0}]}';
+    expect(extractJson(raw)).toEqual({ tags: [{ index: 0 }] });
+  });
+  it("prefers the fenced block even when prose has brackets", () => {
+    const raw = 'Note [see plan].\n```json\n{"tags":[{"index":1}]}\n```';
+    expect(extractJson(raw)).toEqual({ tags: [{ index: 1 }] });
+  });
 });
 
 describe("makeAdapter (with injected runner)", () => {
