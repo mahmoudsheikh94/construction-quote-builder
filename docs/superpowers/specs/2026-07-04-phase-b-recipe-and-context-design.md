@@ -16,7 +16,7 @@ Close the gaps in the unit-rate recipe and add the cheapest high-value whole-est
 `src/lib/domain/cost-engine.ts::evaluateCostModel`:
 
 ```
-line 25-26  labor  += roundDivHalfUp(price × MICRO, productivity)   // ← burden inserts on `price`
+line 25-26  labor  += roundDivHalfUp(price × MICRO, productivity)   // ← burden (+ Phase-C L) enter this division, roadmap §7.2
 line 35     waste   = material × wastePct/100                       // ← per-material waste refines this
 line 37     markup  = base × markupPct/100                          // ← split into overhead × profit here
 ```
@@ -28,7 +28,7 @@ line 37     markup  = base × markupPct/100                          // ← spli
 ### B1. Labor burden % — P0, setup-once *(the single biggest fix)*
 A bare day-rate omits employer on-costs (insurance, social security, tools, non-productive paid time) — **25–40% of true labor cost, up to ~70%**. Omitting it under-costs labor on *every line*: a systematic, first-order bias, not scatter.
 
-- **Where:** multiply `price` by `(1 + burden)` *before* the divide at `cost-engine.ts:26`. Equivalent to a labor-only price uplift.
+- **Where:** carried into `evaluateCostModel` as `opts.burdenNum` and folded into the single fixed-point labor division (roadmap §7.2) — not a separate rounded price uplift. Net effect: a labor-only uplift of `burden%`.
 - **Storage:** firm constant. New `firm_settings` table (single row) `labor_burden_pct numeric`. Also expressible as `ProjectOverrides.laborBurdenPct` for per-project override (reuses the existing labor-premium machinery — note burden ≠ premium: burden is a firm baseline, premium is a project condition like a remote site; they compound).
 - **Capture:** Settings screen, one number. Seed default 30%.
 - **Guardrail:** burden and the existing `laborPremiumPct` are distinct transforms and both apply; document the order (burden first, then premium).
@@ -99,11 +99,13 @@ Rates carry a snapshot date; tender prices drift (~3%/yr + build-period escalati
 
 ## 5. Data-model changes
 
+Follows the **new-table convention (roadmap §7.3)**: `firm_settings` + the 4 reference tables are UI-edited → RLS-enabled with `authenticated` DML + at least an `authenticated select` policy (the session-client reprice path reads them). One migration for the whole phase; sorts last (roadmap §7.4).
+
 ```sql
 create table firm_settings (
   id boolean primary key default true check (id),   -- single-row guard
-  labor_burden_pct numeric not null default 30,
-  overhead_pct numeric not null default 15,
+  labor_burden_pct numeric not null default 30,     -- percent, applied ×(100+pct)/100
+  overhead_pct numeric not null default 15,         -- percent; seeds NEW models only (see B2)
   default_reference_location text,                  -- fallback base for the location factor (B4)
   updated_at timestamptz default now()
 );
@@ -112,41 +114,91 @@ alter table quotes
   add column gross_floor_area_m2 numeric,
   add column storeys integer,
   add column avg_storey_height_m numeric,
-  add column estimate_class integer,           -- 1..5, drives ± band
+  add column estimate_class integer check (estimate_class between 1 and 5),  -- nullable; null ⇒ no band
   add column target_date date;
--- location/profit/size/time live inside quotes.overrides (jsonb) — no column churn
+-- location/profit/size live inside quotes.overrides (jsonb) — no column churn
 
 alter table price_book_entries
-  add column reference_location text;           -- so location factor is relative
+  add column reference_location text;               -- so the location factor is relative (nullable)
 
--- reference/seed tables (firm-editable):
---   location_factors(region, labor_index, material_index)
---   cost_indices(effective_date, index_value)
---   material_waste_defaults(material_category, waste_pct)
---   size_curves(facility_type, curve jsonb)
+-- Reference tables (full DDL, firm-editable via /settings):
+create table location_factors (
+  region text primary key,
+  labor_index numeric not null,       -- e.g. 1.15 (direct multiplier, NOT a percent)
+  material_index numeric not null
+);
+create table cost_indices (
+  effective_date date primary key,
+  index_value numeric not null        -- e.g. 100.0 base, 103.0 next year
+);
+create table material_waste_defaults (
+  material_category text primary key, -- join key = CostComponent.materialCategory (new optional field)
+  waste_pct numeric not null
+);
+create table size_curves (
+  facility_type text primary key,
+  ref_size_m2 numeric not null,       -- explicit power law: sizeFactor = (gfa / ref_size_m2)^(exponent-1)
+  exponent numeric not null
+);
+
+-- Seed rows (representative; firm tunes):
+-- material_waste_defaults: ('mortar',1.5),('tile',10),('structural_steel',13),('stone',10),('concrete',2)
+-- size_curves: ('generic', 1000, 0.90)   -- ~10% unit-cost drop per doubling on fixed components
+-- location_factors: (<firm home region>, 1.00, 1.00)   -- base; others relative to it
+-- cost_indices: (<price-book base date>, 100.0)         -- base index
 ```
 
-`ProjectOverrides` (`overrides.ts`) gains: `laborBurdenPct?`, `profitPct?`, `locationFactor?`, `sizeFactor?`, `targetDate?`. Each is an optional additive transform — absent = current behaviour.
+`CostModelSchema` (`skill-schema.ts`) gains optional `overheadPct`, `profitPct` (B2), and `CostComponentSchema` gains optional `materialCategory` (B3 join key). `markupPct` becomes legacy/optional. These are **versioned-content schema changes** — a new skill version, not just DB columns.
+
+`ProjectOverrides` (`overrides.ts`) gains: `laborBurdenPct?: string` (percent), `profitPct?: string` (percent), `locationFactor?: { labor?: string; material?: string }` (direct indices), `sizeFactor?: string` (direct multiplier), `targetDate?: string` (ISO date). All strings match `parseDecimalToMicro` (`^\d+(\.\d{1,6})?$`, non-negative). **Application rules:**
+- `laborBurdenPct` is **special** — it is *not* a snapshot price uplift. It is converted to `burdenNum` and carried into `evaluateCostModel` as `opts.burdenNum` so it enters the single fixed-point division alongside Phase-C `L` (roadmap §7.2). Applied exactly once (see §5.5).
+- `profitPct` applies like `markupPct` — `× (100+pct)/(100·MICRO)` — inside the overhead/profit compounding in `evaluateCostModel`.
+- `locationFactor` / `sizeFactor` are **direct indices** — `roundDivHalfUp(price × idxMicro, MICRO)`, **no** divide-by-100. Do not divide an index by 100.
+
+## 5.5 Transform & read-path contracts
+
+**Signatures** (each identity when its override is absent; fils-exact):
+
+- `applyLaborBurden(snapshot, laborKeys, o?)` — mirrors the existing `applyLaborPremiumToSnapshot`; uplifts labor-key prices by `laborBurdenPct`. *(Per roadmap §7.1/§7.2, burden is ultimately carried into `evaluateCostModel` via `opts.burdenNum` so it composes with Phase-C `L` in one rounding; the snapshot transform form is used only where burden is applied independently of `L`. Implement burden **once** — as the `opts.burdenNum` path — and derive the snapshot helper from it, to avoid two burden applications. State this explicitly so an implementer doesn't double-apply.)*
+- `applyLocationFactor(snapshot, laborKeys, materialKeys, equipmentKeys, o?)` — mirrors `applyLaborPremiumToSnapshot`. Multiplies labor-key entries by `locationFactor.labor`, material-key by `locationFactor.material`, **equipment-key by the material index** (stated explicitly). **Key derivation:** labor/material/equipment key sets are derived in `price-quote.ts` (alongside the existing labor-key scan at `:37-41`) by scanning every skill's cost-model components by `c.kind`. **No `kind` column is added** to `price_book_entries`/`PriceSnapshotEntry` — kind is a component-role property, not a price-book-row property. Applied relative to each entry's `referenceLocation` (see below).
+- `applyTimeIndex(snapshot, o?)` — `adjusted = base × (index@targetDate ÷ index@baseDate)`; base date = per-entry `effectiveDate` (already on the snapshot).
+- `applySizeFactor` — **not** a snapshot transform. Applied **inside `evaluateCostModel`**, scaling only the **material + equipment** sub-totals (derived from the `kind` enum: material+equipment = fixed/bulk, labor = variable/never-scaled) before waste/markup. No `CostComponentSchema` change; a finer `costBehavior` split is explicitly deferred out of Phase B.
+
+**`reference_location` threading:** add `referenceLocation: string | null` to `PriceSnapshotEntry` (`types.ts`); add `reference_location` to `getSnapshot`'s SELECT (`price-book.ts`) and populate it. `applyLocationFactor` reads `snapshot[key].referenceLocation ?? firm_settings.default_reference_location` — so a per-entry base wins, and a NULL never applies the index against an undefined base.
+
+**B2 overhead/profit precedence** (kills the double-count): `evaluateCostModel` computes `base × (1+overheadPct) × (1+profitPct)` **when overhead/profit present**, else falls back to `base × (1+markupPct)`. `applyModelOverrides` gains a `firmSettings?` arg and folds resolved overhead/profit onto the returned `CostModel` (engine signature unchanged; it reads `model.overheadPct`/`profitPct`). **A legacy model with `markupPct` and no `overheadPct` uses the legacy branch ONLY — `firm_settings.overhead_pct` is NOT applied to it.** Migration copies each model's own `markupPct → overheadPct`, `profitPct = 0` (so it reprices identically); `firm_settings.overhead_pct = 15` seeds only NEW models. Locked by the backward-compat fils test.
+
+**B7 estimate-band contract:** class→band is a **code constant** `ESTIMATE_CLASS_BANDS: Record<1..5, {lowPct, highPct}>` (AACE: class 5 −50/+100 … class 1 −10/+15). A **new pure fn** `applyEstimateBand(grandTotalFils, estimateClass|null): {point, low, high, class}` in `rollup.ts` — do **not** thread class through `buildRollup` (stays line-only); call it on the rollup's `grandTotalFils`. Null class → `{point, low:null, high:null, class:null}`. Rounding: `low = roundDivHalfUp(point×(1000+lowPctMilli), 1000)`. **Threading:** `getQuote` **and** `listQuotes` must SELECT `estimate_class` (note `listQuotes` currently inlines its own reduce and never calls `buildRollup`); the export route + quote-detail page pass `quote.estimate_class` into `applyEstimateBand`.
+
+**Read path & override assembly:**
+1. `getFirmSettings(db): Promise<{laborBurdenPct, overheadPct, defaultReferenceLocation}>` — single-row read; falls back to defaults (burden 30, overhead 15) if the row is absent.
+2. `buildProjectOverrides({firm, quoteOverrides}): ProjectOverrides` — overlays `quotes.overrides` (jsonb) **on top of** firm defaults field-by-field (per-quote wins).
+3. Thread it: add `overrides?: ProjectOverrides` to `assembleAndPrice` (pass into `priceQuote` at `assemble.ts:65` — the param is currently dead) and to `runPipeline` (forward at `run.ts:120`).
+4. Wire surfaces: **web** loads `getFirmSettings` + `quote.overrides` → `buildProjectOverrides` → the `reprice(quoteId)` session-client server action (roadmap §7.4) that persists new `rate_fils`/`amount_fils`; **CLI** (`scripts/pipeline.ts`) uses firm defaults only (it prices a file before `saveQuote`).
 
 ## 6. Transform order
 
-Follows the **authoritative pipeline in the roadmap (§7)** — this spec does not redeclare it. The Phase-B transforms occupy these slots: snapshot-level `applyTimeIndex` → `applyLocationFactor` → `applyLaborBurden`; per-model `applyModelOverrides` (waste + overhead/profit) → `applySizeFactor`. Note the roadmap's **single-rounding rule**: burden multiplies `price` and Phase-C's `L` divides `productivity` in **one** `roundDivHalfUp(price×(1+burden)×MICRO, productivity/L)` — not two sequential rounded ops. A fils-exact test locks this (see §7).
+Follows the **authoritative pipeline (roadmap §7)** and the **fixed-point single-rounding division (roadmap §7.2)** — this spec does not redeclare either. Phase-B slots: snapshot `applyTimeIndex` → `applyLocationFactor` (burden folded into the `evaluateCostModel` `opts.burdenNum` per §7.2, not a separate rounding) → existing `applyLaborPremium`; per-model `applyModelOverrides` (waste + overhead/profit) → `applySizeFactor` inside `evaluateCostModel`.
 
 ## 7. Testing
 
 - Each transform: pure unit test, fils-exact, absent-field = identity.
-- `evaluateCostModel` with burden: labor rises by exactly burden%; material/equipment unchanged.
-- Overhead/profit split: legacy `markupPct`-only model reprices identically (backward-compat lock).
-- Full-pipeline golden test: AlSafi baseline vs +burden via **Phase-A backtest** — assert the direction and that grand-total deviation does not regress.
-- Estimate-class band: rollup emits correct low/high for each class.
+- **Burden via `opts.burdenNum`** (roadmap §7.2 single division): labor rises by exactly burden%; material/equipment unchanged; `burdenNum=0` = current identity (the `laborFils:1667` lock).
+- **Location factor:** labor keys move by labor index, material **and equipment** keys by material index, untouched keys identity; per-entry `referenceLocation` used over the firm default when present.
+- **Size factor:** labor unchanged; material+equipment scale by exactly `sizeFactor`; derived purely from `kind`.
+- **Overhead/profit precedence:** legacy `markupPct`-only model reprices identically (backward-compat lock); a model with overhead+profit uses the compounding branch; firm overhead is NOT applied to a legacy model.
+- **Estimate band:** `applyEstimateBand` emits correct `{low, high}` per class; null class → nulls; rounding exact.
+- **Index-not-percent guardrail:** a `locationFactor`/`sizeFactor` value is applied with no divide-by-100.
+- Full-pipeline: AlSafi baseline vs +burden via the **Phase-A backtest** — assert grand-total deviation does not regress.
 
 ## 8. Deliverables checklist
 
-- [ ] `firm_settings` table + `/settings` screen (burden, overhead, reference tables).
-- [ ] `quotes` new columns + project-settings form on quote detail.
-- [ ] `price_book_entries.reference_location`.
-- [ ] Transforms: `applyLaborBurden`, `applyLocationFactor`, `applyTimeIndex`, `applySizeFactor`; overhead/profit in `evaluateCostModel`.
-- [ ] Seed tables: location factors, cost indices, material waste defaults, size curves.
-- [ ] Estimate-class → ± band in rollup + UI display of the range.
-- [ ] Backward-compat migration for `markupPct` → overhead/profit.
-- [ ] Tests + Phase-A backtest run for burden and location (the two P0 multipliers).
+- [ ] Migration (sorts last): `firm_settings` + 4 reference tables (full DDL + §7.3 UI-table grants/policies), `quotes` columns (+ estimate_class CHECK), `price_book_entries.reference_location`.
+- [ ] Seed rows for the 4 reference tables (values in §5).
+- [ ] Schema changes: `CostModelSchema` +`overheadPct`/`profitPct`, `CostComponentSchema` +`materialCategory`; `PriceSnapshotEntry` +`referenceLocation`; `getSnapshot` SELECT.
+- [ ] Transforms: `applyLaborBurden` (as the `opts.burdenNum` path), `applyLocationFactor` (labor/material/equipment key derivation in `price-quote.ts`), `applyTimeIndex`, `applySizeFactor` (inside `evaluateCostModel`); overhead/profit compounding + precedence in `evaluateCostModel`/`applyModelOverrides`.
+- [ ] `applyEstimateBand` in `rollup.ts`; `getQuote` **and** `listQuotes` SELECT `estimate_class`; UI range display.
+- [ ] Read path: `getFirmSettings`, `buildProjectOverrides`; thread `overrides?` through `assembleAndPrice`/`runPipeline`.
+- [ ] `reprice(quoteId)` session-client server action (roadmap §7.4) + `/settings` screen + project-settings form on quote detail.
+- [ ] Backward-compat migration: each model's `markupPct → overheadPct`, `profitPct=0`.
+- [ ] Tests (above) + Phase-A backtest run for burden and location.
