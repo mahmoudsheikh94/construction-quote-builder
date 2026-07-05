@@ -13,14 +13,18 @@ const PROFILES: Record<string, string[]> = {
   architectural: ["tiling", "painting", "doors-windows", "false-ceiling"],
 };
 
-for (const [slug, trades] of Object.entries(PROFILES)) {
-  const existing = await getActiveProfile(slug);
-  if (existing) {
-    console.log(`${slug}: already active, skip`);
-    continue;
+async function main() {
+  for (const [slug, trades] of Object.entries(PROFILES)) {
+    const existing = await getActiveProfile(slug).catch(() => null);
+    if (existing) {
+      console.log(`${slug}: already active, skip`);
+      continue;
+    }
+    const { id } = await createProfile(slug, slug);
+    const { id: versionId } = await createProfileVersion(id, { trades, ratioChecks: [] }, "seed");
+    await activateProfileVersion(id, versionId);
+    console.log(`${slug}: seeded + activated with trades ${trades.join(", ")}`);
   }
-  const { id } = await createProfile(slug, slug);
-  const { id: versionId } = await createProfileVersion(id, { trades, ratioChecks: [] }, "seed");
-  await activateProfileVersion(id, versionId);
-  console.log(`${slug}: seeded + activated with trades ${trades.join(", ")}`);
 }
+
+main().catch((e) => { console.error(e); process.exit(1); });
