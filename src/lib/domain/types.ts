@@ -13,6 +13,7 @@ export interface PriceSnapshotEntry {
   entryId: string;
   effectiveDate: string;
   unit: string;
+  referenceLocation?: string | null;   // B4: base region for the location factor
 }
 export type PriceSnapshot = Record<string, PriceSnapshotEntry>;
 
