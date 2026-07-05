@@ -55,6 +55,9 @@ begin
     execute format('alter table %I enable row level security', t);
     execute format('revoke all on %I from anon', t);
     execute format('grant select, insert, update, delete on %I to authenticated', t);
+    -- service_role (CLI pricing path + tests) needs an explicit grant on freshly
+    -- created tables — it does NOT inherit the broad grants earlier migrations gave.
+    execute format('grant select, insert, update, delete on %I to service_role', t);
     execute format($f$create policy %I on %I for select to authenticated using (true)$f$, t||'_sel', t);
     execute format($f$create policy %I on %I for insert to authenticated with check (true)$f$, t||'_ins', t);
     execute format($f$create policy %I on %I for update to authenticated using (true) with check (true)$f$, t||'_upd', t);
