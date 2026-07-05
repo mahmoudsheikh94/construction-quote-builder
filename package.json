@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "pipeline": "tsx scripts/pipeline.ts",
     "golden:build": "tsx scripts/golden-build.ts",
-    "backtest": "tsx scripts/backtest.ts"
+    "backtest": "tsx scripts/backtest.ts",
+    "variance": "tsx scripts/variance.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
