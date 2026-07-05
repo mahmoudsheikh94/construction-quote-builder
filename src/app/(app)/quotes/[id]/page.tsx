@@ -5,11 +5,21 @@ import { buildQuoteRange } from "@/lib/domain/range";
 import { filsToJDString } from "@/lib/domain/money";
 import { QuoteTable } from "./QuoteTable";
 import { ProjectSettingsForm } from "./ProjectSettingsForm";
+import { ConditionsForm, type McaaFactor, type NecaRow } from "./ConditionsForm";
 
 export default async function QuoteDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await createClient();
   const quote = await getQuote(id, db);
+
+  const [{ data: mcaaData }, { data: necaData }] = await Promise.all([
+    db.from("mcaa_factors").select("key, label_ar, minor_pct, avg_pct, severe_pct").order("key"),
+    db.from("neca_conditions").select("key, label_ar").order("key"),
+  ]);
+  const mcaaFactors: McaaFactor[] = (mcaaData ?? []).map((r) => ({
+    key: r.key, labelAr: r.label_ar, minor: r.minor_pct, average: r.avg_pct, severe: r.severe_pct,
+  }));
+  const necaRows: NecaRow[] = (necaData ?? []).map((r) => ({ key: r.key, labelAr: r.label_ar }));
 
   const grandTotalFils = quote.lines.reduce((sum, l) => sum + (l.amount_fils ?? 0), 0);
   const optimismPct = quote.settings.archetype && quote.settings.estimateClass
@@ -47,6 +57,7 @@ export default async function QuoteDetail({ params }: { params: Promise<{ id: st
       </div>
 
       <ProjectSettingsForm quoteId={id} settings={quote.settings} />
+      <ConditionsForm quoteId={id} mcaaFactors={mcaaFactors} necaRows={necaRows} initialMode="mcaa" />
       <QuoteTable quoteId={id} lines={quote.lines} />
     </div>
   );
