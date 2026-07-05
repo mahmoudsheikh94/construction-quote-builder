@@ -39,7 +39,10 @@ export type FlagCode =
   // Reserved for Phase 2: raised when a price-book entry's unit does not match
   // the unit a cost-model component assumes (e.g. an hourly rate where the
   // model expects a day rate), which would otherwise mis-price silently.
-  | "PRICE_UNIT_MISMATCH";
+  | "PRICE_UNIT_MISMATCH"
+  // Phase D: a required trade from the scope template is absent from the BOQ;
+  // and a trade/total $/m² that deviates > 15% from the firm's learned band.
+  | "SCOPE_GAP" | "SANITY_BAND";
 
 export interface Flag {
   code: FlagCode;
