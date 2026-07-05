@@ -20,7 +20,7 @@ export async function getSnapshot(asOf?: string, db: SupabaseClient = serviceCli
   const date = asOf ?? new Date().toISOString().slice(0, 10);
   const { data, error } = await db
     .from("price_book_entries")
-    .select("id, key, unit, price_fils, effective_date, created_at")
+    .select("id, key, unit, price_fils, effective_date, reference_location, created_at")
     .lte("effective_date", date)
     .order("effective_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -31,6 +31,7 @@ export async function getSnapshot(asOf?: string, db: SupabaseClient = serviceCli
       snapshot[row.key] = {
         priceFils: Number(row.price_fils), entryId: row.id,
         effectiveDate: row.effective_date, unit: row.unit,
+        referenceLocation: row.reference_location ?? null,
       };
     }
   }
