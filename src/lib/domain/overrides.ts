@@ -16,6 +16,24 @@ export interface ProjectOverrides {
   locationFactor?: { labor?: string; material?: string };  // direct indices
   sizeFactor?: string;                                      // direct multiplier
   targetDate?: string;                                      // ISO date for the time index
+  // Phase D: learned per-component productivity, keyed `<trade>:<modelId>:<componentId>`.
+  learnedProductivity?: Record<string, string>;
+}
+
+// Read-time shadow of a learned productivity norm onto a labor component — never
+// mutates the immutable skill version. Identity when no norm applies.
+export function applyLearnedProductivity(model: CostModel, trade: string, o?: ProjectOverrides): CostModel {
+  const learned = o?.learnedProductivity;
+  if (!learned) return model;
+  let touched = false;
+  const components = model.components.map((c) => {
+    if (c.kind !== "labor") return c;
+    const v = learned[`${trade}:${model.id}:${c.id}`];
+    if (v == null) return c;
+    touched = true;
+    return { ...c, productivityPerDay: v };
+  });
+  return touched ? { ...model, components } : model;
 }
 
 // Burden is carried into evaluateCostModel as an integer percent (opts.burdenNum),
