@@ -77,3 +77,9 @@ export async function deleteLaborRate(id: string): Promise<void> {
   if (error) throw new Error(error.message);
   revalidatePath("/labor-rates");
 }
+
+export async function addDayLog(input: import("./day-log-core").DayLogFormInput): Promise<void> {
+  const { addDayLogCore } = await import("./day-log-core");
+  await addDayLogCore(input);
+  revalidatePath("/labor-rates");
+}
