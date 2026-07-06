@@ -5,7 +5,7 @@ import { classifyItemType } from "@/lib/ingest/item-type-gate";
 import { chunk, mapLimit, batchTagLines, batchMatchLines } from "./batch";
 import { toMatchedItem, assembleAndPrice } from "./assemble";
 import type { MatchResult } from "./match";
-import { getActiveProfile, getActiveSkill } from "@/lib/db/skills";
+import { getActiveProfile, getActiveSkill, getSkillVersionById, getProfileVersionById } from "@/lib/db/skills";
 import { getSnapshot } from "@/lib/db/price-book";
 import { lookupBySignature, type LineTags } from "@/lib/db/corpus";
 import type { SkillContent } from "@/lib/domain/skill-schema";
@@ -14,6 +14,7 @@ import { toPricedRows, toPricedJson, type PricedRow } from "@/lib/export/priced-
 import type { RawLine } from "@/lib/ingest/types";
 import type { QuoteRollup } from "@/lib/domain/rollup";
 import type { Flag } from "@/lib/domain/types";
+import type { ProjectOverrides } from "@/lib/domain/overrides";
 
 export async function runPipeline(input: {
   file: string;
@@ -22,18 +23,26 @@ export async function runPipeline(input: {
   asOf?: string;
   batchSize?: number;
   concurrency?: number;
+  // Backtest config-pin (defaults preserve current behaviour): pin the profile
+  // version, per-trade skill versions, and/or apply project overrides.
+  overrides?: ProjectOverrides;
+  skillVersions?: Record<string, string>; // trade slug -> skill_version id
+  profileVersionId?: string;
 }): Promise<{ json: object; rows: PricedRow[]; rollup: QuoteRollup; projectFlags: Flag[]; ingestionWarnings: string[] }> {
   // 1. Ingest
   const isExcel = /\.xlsx?$|\.xlsm$/i.test(input.file);
   const extraction = isExcel ? ingestExcel(input.file) : await ingestPdf(input.file, input.adapter);
   const rawLines: RawLine[] = extraction.lines;
 
-  // 2. Load the profile + its active skills + a price snapshot
-  const profile = await getActiveProfile(input.profileSlug);
+  // 2. Load the profile + its skills (pinned versions if provided) + a price snapshot
+  const profile = input.profileVersionId
+    ? await getProfileVersionById(input.profileVersionId)
+    : await getActiveProfile(input.profileSlug);
   if (!profile) throw new Error(`ملف المشروع «${input.profileSlug}» غير مفعّل`);
   const skills: Record<string, { content: SkillContent; versionId: string }> = {};
   for (const tradeSlug of profile.content.trades) {
-    const s = await getActiveSkill(tradeSlug);
+    const pinned = input.skillVersions?.[tradeSlug];
+    const s = pinned ? await getSkillVersionById(pinned) : await getActiveSkill(tradeSlug);
     if (s) skills[s.content.trade] = { content: s.content, versionId: s.versionId };
   }
   const snapshot = await getSnapshot(input.asOf);
@@ -117,7 +126,7 @@ export async function runPipeline(input: {
   });
 
   // 4. Price + flag
-  const result = assembleAndPrice({ items, skills, snapshot });
+  const result = assembleAndPrice({ items, skills, snapshot, overrides: input.overrides });
   const rows = toPricedRows(rawLines, result.lines);
   const json = toPricedJson(rows, result.rollup, result.projectFlags, extraction.warnings);
   return { json, rows, rollup: result.rollup, projectFlags: result.projectFlags, ingestionWarnings: extraction.warnings };

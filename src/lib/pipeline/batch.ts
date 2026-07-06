@@ -35,14 +35,18 @@ export async function mapLimit<T, R>(
 }
 
 export const BATCH_TAGS_SCHEMA = z.object({
+  // The model sometimes returns null instead of an empty array when a batch has no
+  // tags; coerce null/missing -> [] so it doesn't fail the whole run.
+  // The CLI returns null for any absent optional field (all types). Accept null on
+  // every optional so a single null doesn't fail the whole batch.
   tags: z.array(z.object({
     index: z.number().int().nonnegative(),
-    material: z.string().optional(),
-    dimensions: z.string().optional(),
-    grade: z.string().optional(),
-    category: z.string().optional(),
-    standardRefs: z.array(z.string()).optional(),
-  })),
+    material: z.string().nullish().transform((v) => v ?? undefined),
+    dimensions: z.string().nullish().transform((v) => v ?? undefined),
+    grade: z.string().nullish().transform((v) => v ?? undefined),
+    category: z.string().nullish().transform((v) => v ?? undefined),
+    standardRefs: z.array(z.string()).nullish().transform((v) => v ?? []),
+  })).nullish().transform((v) => v ?? []),
 });
 
 const BATCH_TAG_SYSTEM = `أنت تصنّف بنود جداول الكميات الإنشائية دفعةً واحدة. لكل بند استخرج سمات منظمة:
@@ -77,7 +81,7 @@ export const BATCH_MATCH_SCHEMA = z.object({
     index: z.number().int().nonnegative(),
     costModelId: z.string().nullable(),
     confidence: z.number().min(0).max(1),
-  })),
+  })).nullish().transform((v) => v ?? []),
 });
 
 export async function batchMatchLines(

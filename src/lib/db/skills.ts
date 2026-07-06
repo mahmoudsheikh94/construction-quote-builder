@@ -59,6 +59,22 @@ export async function getActiveSkill(slug: string, db: SupabaseClient = serviceC
   };
 }
 
+// Load a specific (pinned) skill/profile version by id — used to make a backtest
+// run reproducible against fixed versions rather than the active ones.
+export async function getSkillVersionById(versionId: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
+    .from("skill_versions").select("id, content").eq("id", versionId).maybeSingle();
+  if (error) throw error;
+  return data ? { content: SkillContentSchema.parse(data.content), versionId: data.id } : null;
+}
+
+export async function getProfileVersionById(versionId: string, db: SupabaseClient = serviceClient()) {
+  const { data, error } = await db
+    .from("profile_versions").select("id, content").eq("id", versionId).maybeSingle();
+  if (error) throw error;
+  return data ? { content: ProfileContentSchema.parse(data.content), versionId: data.id } : null;
+}
+
 export async function listSkillVersions(skillId: string, db: SupabaseClient = serviceClient()) {
   const { data, error } = await db
     .from("skill_versions").select("id, version_number, changelog, created_at")

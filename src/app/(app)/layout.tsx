@@ -31,6 +31,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/price-book" className="text-gray-600 hover:text-gray-900 transition-colors">
           دفتر الأسعار
         </Link>
+        <Link href="/settings" className="text-gray-600 hover:text-gray-900 transition-colors">
+          الإعدادات
+        </Link>
         <form action={signOut} className="ms-auto">
           <button className="text-red-600 hover:text-red-700 transition-colors">خروج</button>
         </form>

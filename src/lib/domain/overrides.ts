@@ -2,12 +2,95 @@ import type { CostModel } from "./skill-schema";
 import type { PriceSnapshot } from "./types";
 import { parseDecimalToMicro, roundDivHalfUp } from "./money";
 
+const MICRO = 1_000_000n;
+
 export interface ProjectOverrides {
   priceBook?: Record<string, number>;
   globalMarkupPct?: string;
   markupPctByTrade?: Record<string, string>;
   laborPremiumPct?: string;
   models?: Record<string, { wastePct?: string; markupPct?: string }>;
+  // Phase B additions (each optional; absent = identity)
+  laborBurdenPct?: string;                                  // percent -> opts.burdenNum
+  profitPct?: string;                                       // percent
+  locationFactor?: { labor?: string; material?: string };  // direct indices
+  sizeFactor?: string;                                      // direct multiplier
+  targetDate?: string;                                      // ISO date for the time index
+  // Phase D: learned per-component productivity, keyed `<trade>:<modelId>:<componentId>`.
+  learnedProductivity?: Record<string, string>;
+}
+
+// Read-time shadow of a learned productivity norm onto a labor component — never
+// mutates the immutable skill version. Identity when no norm applies.
+export function applyLearnedProductivity(model: CostModel, trade: string, o?: ProjectOverrides): CostModel {
+  const learned = o?.learnedProductivity;
+  if (!learned) return model;
+  let touched = false;
+  const components = model.components.map((c) => {
+    if (c.kind !== "labor") return c;
+    const v = learned[`${trade}:${model.id}:${c.id}`];
+    if (v == null) return c;
+    touched = true;
+    return { ...c, productivityPerDay: v };
+  });
+  return touched ? { ...model, components } : model;
+}
+
+// Burden is carried into evaluateCostModel as an integer percent (opts.burdenNum),
+// NOT a snapshot price uplift — so it folds into the single labor division (roadmap §7.2).
+export function burdenNumFromOverrides(o?: ProjectOverrides): bigint {
+  if (!o?.laborBurdenPct) return 0n;
+  return BigInt(Math.round(Number(o.laborBurdenPct)));
+}
+
+// Multiply labor keys by the labor index, material + equipment keys by the material
+// index. Indices are direct multipliers (roundDivHalfUp(price*idx, MICRO)) — no /100.
+export function applyLocationFactor(
+  snapshot: PriceSnapshot,
+  laborKeys: string[], materialKeys: string[], equipmentKeys: string[],
+  o?: ProjectOverrides,
+): PriceSnapshot {
+  if (!o?.locationFactor) return snapshot;
+  const out: PriceSnapshot = { ...snapshot };
+  const scale = (keys: string[], idx?: string) => {
+    if (!idx) return;
+    const m = parseDecimalToMicro(idx);
+    for (const k of keys) {
+      if (!out[k]) continue;
+      out[k] = { ...out[k], priceFils: Number(roundDivHalfUp(BigInt(out[k].priceFils) * m, MICRO)) };
+    }
+  };
+  scale(laborKeys, o.locationFactor.labor);
+  scale(materialKeys, o.locationFactor.material);
+  scale(equipmentKeys, o.locationFactor.material); // equipment uses the material index (spec §5.5)
+  return out;
+}
+
+// Latest index whose date <= the given date (mirrors getSnapshot's as-of logic).
+function pickIndex(indices: Record<string, number>, date: string): number | null {
+  let best: number | null = null, bestDate = "";
+  for (const [d, v] of Object.entries(indices)) {
+    if (d <= date && d >= bestDate) { best = v; bestDate = d; }
+  }
+  return best;
+}
+
+export function applyTimeIndex(
+  snapshot: PriceSnapshot,
+  indices: Record<string, number>,
+  o?: ProjectOverrides,
+): PriceSnapshot {
+  if (!o?.targetDate) return snapshot;
+  const target = pickIndex(indices, o.targetDate);
+  if (target == null) return snapshot;
+  const out: PriceSnapshot = { ...snapshot };
+  for (const k of Object.keys(out)) {
+    const base = pickIndex(indices, out[k].effectiveDate);
+    if (base == null || base === 0) continue;
+    const num = BigInt(Math.round(target * 1e6)), den = BigInt(Math.round(base * 1e6));
+    out[k] = { ...out[k], priceFils: Number(roundDivHalfUp(BigInt(out[k].priceFils) * num, den)) };
+  }
+  return out;
 }
 
 export function applyPriceOverrides(snapshot: PriceSnapshot, o?: ProjectOverrides): PriceSnapshot {
@@ -17,6 +100,29 @@ export function applyPriceOverrides(snapshot: PriceSnapshot, o?: ProjectOverride
     if (out[key]) out[key] = { ...out[key], priceFils };
   }
   return out;
+}
+
+// Multiply two decimal strings (each up to 6 dp) and return a trimmed decimal string.
+function mulDecimalStrings(a: string, b: string): string {
+  const product = parseDecimalToMicro(a) * parseDecimalToMicro(b); // micro * micro = 1e12 scale
+  const whole = product / MICRO / MICRO;
+  const frac = (product / MICRO) % MICRO; // remaining 6-dp fraction
+  const fracStr = frac.toString().padStart(6, "0").replace(/0+$/, "");
+  return fracStr ? `${whole}.${fracStr}` : `${whole}`;
+}
+
+// Scale only material + equipment component quantities by the size factor (fixed/bulk
+// costs benefit from scale; labor productivity is never scaled). No schema change.
+export function applySizeFactorToModel(model: CostModel, sizeFactor?: string): CostModel {
+  if (!sizeFactor) return model;
+  return {
+    ...model,
+    components: model.components.map((c) =>
+      c.kind === "labor" || c.qtyPerUnit == null
+        ? c
+        : { ...c, qtyPerUnit: mulDecimalStrings(c.qtyPerUnit, sizeFactor) },
+    ),
+  };
 }
 
 export function applyModelOverrides(model: CostModel, trade: string, o?: ProjectOverrides): CostModel {

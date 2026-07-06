@@ -10,6 +10,7 @@ export const CostComponentSchema = z.object({
   priceBookKey: z.string().min(1),
   qtyPerUnit: decimalString.optional(),
   productivityPerDay: decimalString.optional(),
+  materialCategory: z.string().optional(),   // B3: join key into material_waste_defaults
 }).refine(
   (c) => (c.kind === "labor" ? !!c.productivityPerDay : !!c.qtyPerUnit),
   { message: "labor يتطلب productivityPerDay، وغيره يتطلب qtyPerUnit" },
@@ -22,7 +23,9 @@ export const CostModelSchema = z.object({
   keywords: z.array(z.string()),
   components: z.array(CostComponentSchema).min(1),
   wastePct: decimalString,
-  markupPct: decimalString,
+  markupPct: decimalString,          // legacy blended markup (still honoured)
+  overheadPct: decimalString.optional(),  // B2: overhead/profit split (compounding)
+  profitPct: decimalString.optional(),
   band: z.object({ minRateFils: z.number().int().nonnegative(), maxRateFils: z.number().int().positive() }).optional(),
 });
 

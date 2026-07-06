@@ -111,10 +111,40 @@ export async function listQuotes(db: SupabaseClient = serviceClient()) {
   return out;
 }
 
-export async function getQuote(id: string, db: SupabaseClient = serviceClient()): Promise<{ id: string; name: string | null; lines: LineItemRow[] }> {
+export interface QuoteSettings {
+  grossFloorAreaM2: number | null;
+  storeys: number | null;
+  avgStoreyHeightM: number | null;
+  estimateClass: number | null;
+  targetDate: string | null;
+  archetype: string | null;
+  siteClass: string | null;
+  contingencyPct: number | null;
+  region: string | null;
+  overrides: Record<string, unknown> | null;
+}
+
+export async function getQuote(
+  id: string, db: SupabaseClient = serviceClient(),
+): Promise<{ id: string; name: string | null; lines: LineItemRow[]; settings: QuoteSettings }> {
   const sc = db;
-  const { data: q, error } = await sc.from("quotes").select("id, name").eq("id", id).single();
+  const { data: q, error } = await sc
+    .from("quotes")
+    .select("id, name, gross_floor_area_m2, storeys, avg_storey_height_m, estimate_class, target_date, archetype, site_class, contingency_pct, region, overrides")
+    .eq("id", id).single();
   if (error) throw error;
   const lines = await getQuoteItems(id, sc);
-  return { id: q.id, name: q.name, lines };
+  const settings: QuoteSettings = {
+    grossFloorAreaM2: q.gross_floor_area_m2 == null ? null : Number(q.gross_floor_area_m2),
+    storeys: q.storeys ?? null,
+    avgStoreyHeightM: q.avg_storey_height_m == null ? null : Number(q.avg_storey_height_m),
+    estimateClass: q.estimate_class ?? null,
+    targetDate: q.target_date ?? null,
+    archetype: q.archetype ?? null,
+    siteClass: q.site_class ?? null,
+    contingencyPct: q.contingency_pct == null ? null : Number(q.contingency_pct),
+    region: q.region ?? null,
+    overrides: (q.overrides as Record<string, unknown>) ?? null,
+  };
+  return { id: q.id, name: q.name, lines, settings };
 }

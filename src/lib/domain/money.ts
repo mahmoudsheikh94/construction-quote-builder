@@ -31,6 +31,19 @@ export function roundDivHalfUp(n: bigint, d: bigint): bigint {
   return r * 2n >= d ? q + 1n : q;
 }
 
+// Signed half-away-from-zero division. Unlike roundDivHalfUp (which requires
+// n >= 0), this accepts a negative numerator — needed for signed bps error metrics.
+export function roundHalfAwayFromZero(n: bigint, d: bigint): bigint {
+  if (d === 0n) throw new Error("roundHalfAwayFromZero: d != 0 مطلوب");
+  const sign = n < 0n !== d < 0n ? -1n : 1n;
+  const an = n < 0n ? -n : n;
+  const ad = d < 0n ? -d : d;
+  const q = an / ad;
+  const r = an % ad;
+  const mag = r * 2n >= ad ? q + 1n : q;
+  return sign * mag;
+}
+
 export function lineAmountFils(qtyThousandths: number, rateFils: Fils): Fils {
   assertIntFils(rateFils);
   if (!Number.isInteger(qtyThousandths) || qtyThousandths < 0) {

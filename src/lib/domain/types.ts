@@ -13,6 +13,7 @@ export interface PriceSnapshotEntry {
   entryId: string;
   effectiveDate: string;
   unit: string;
+  referenceLocation?: string | null;   // B4: base region for the location factor
 }
 export type PriceSnapshot = Record<string, PriceSnapshotEntry>;
 
@@ -24,6 +25,11 @@ export interface RateBreakdown {
   markupFils: number;
   rateFils: number;
   priceEntryIds: Record<string, string>;
+  // Phase C (optional; present only when a productivity multiplier applied)
+  productivityLoss?: number;
+  sources?: Record<string, number>;
+  // Phase C (optional; set when an engineer manually overrode the computed rate)
+  manualOverride?: boolean;
 }
 
 export type FlagCode =
@@ -33,7 +39,10 @@ export type FlagCode =
   // Reserved for Phase 2: raised when a price-book entry's unit does not match
   // the unit a cost-model component assumes (e.g. an hourly rate where the
   // model expects a day rate), which would otherwise mis-price silently.
-  | "PRICE_UNIT_MISMATCH";
+  | "PRICE_UNIT_MISMATCH"
+  // Phase D: a required trade from the scope template is absent from the BOQ;
+  // and a trade/total $/m² that deviates > 15% from the firm's learned band.
+  | "SCOPE_GAP" | "SANITY_BAND";
 
 export interface Flag {
   code: FlagCode;
